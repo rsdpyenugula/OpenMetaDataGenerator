@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use OpenMetaDataGenerator, please cite it."
+title: "OpenMetaDataGenerator: Context-Grounded, Lineage-Aware Automatic Description Generation for Data-Catalog Metadata"
+authors:
+  - family-names: "Yenugula"
+    given-names: "Ravi Satya Durga Prasad"
+version: 0.1.0
+license: Apache-2.0
+date-released: 2026-01-01
+url: "https://github.com/<your-account>/OpenMetaDataGenerator"

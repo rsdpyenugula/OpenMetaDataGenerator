@@ -1,0 +1,257 @@
+% OpenMetaDataGenerator --- arXiv / TMLR submission.
+% For a TMLR camera-ready, replace the preamble with \documentclass{article}\usepackage{tmlr}
+% (the TMLR style). This standalone version compiles with a base LaTeX install.
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{natbib}
+\usepackage{hyperref}
+\usepackage[margin=1in]{geometry}
+\usepackage{xcolor}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+
+\title{\textbf{OpenMetaDataGenerator: Context-Grounded, Lineage-Aware\\
+Automatic Description Generation for Data-Catalog Metadata}}
+\author{%
+  Ravi Satya Durga Prasad Yenugula\\
+  Independent Researcher\\
+  \texttt{https://github.com/<your-account>/OpenMetaDataGenerator}
+}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Enterprise data platforms routinely track tens of thousands of tables whose
+\emph{technical} metadata---schemas and lineage---is captured automatically, yet whose
+\emph{semantic} metadata---what a table means, what one row represents, what each
+column measures---is chronically absent. This gap makes data discovery, governance,
+and analytics slow and error-prone. We present \textbf{OpenMetaDataGenerator (OMDG)},
+an open-source system that generates the missing semantic layer at scale by grounding
+a large language model (LLM) in three complementary signals: table \emph{schema},
+external \emph{context} (transformation code and documentation), and data
+\emph{lineage}. OMDG contributes (i) a \emph{topological wave scheduler} that generates
+descriptions in lineage order so downstream tables inherit the grounded descriptions of
+their upstreams, propagating context through the lineage DAG; (ii) a
+\emph{retrieval-grounded prompting} scheme that fuses schema, code, documentation, and
+column-level lineage; and (iii) two closed control loops---a coverage loop and an
+accuracy-driven \emph{rework} loop that scores each description's semantic similarity to
+the exact context it was grounded in and regenerates a low-similarity tail. The system
+is source-agnostic (DataHub, Databricks, Snowflake) and model-agnostic (OpenAI,
+Anthropic, Bedrock, Vertex, Azure), and emits auditable, provenance-tagged descriptions.
+Because production catalogs lack ground-truth semantics, we introduce a synthetic,
+fully-labelled benchmark with a medallion lineage DAG and controllable context, and
+complement it with a real, public schema (TPC-H) whose foreign keys we read as lineage; we
+measure coverage, semantic accuracy against ground truth, and a faithfulness
+(anti-hallucination) proxy. Ablations on both benchmarks show that external context
+substantially improves accuracy and grain recovery over a schema-only baseline, and we
+specify a human-evaluation protocol for real-catalog deployments. We release the system,
+benchmark, and evaluation harness under Apache-2.0.
+\end{abstract}
+
+\section{Introduction}
+The value of a data platform is bounded by the ability of its users to \emph{find} and
+\emph{trust} the right data. Technical metadata---column names, types, table lineage---is
+now captured automatically by catalog systems~\citep{halevy2016goods,hellerstein2017ground}.
+Semantic metadata---a one-sentence statement of what a table is, its grain (what a single
+row represents), and the meaning of each column---remains overwhelmingly manual and, in
+practice, missing for the long tail of tables. The consequences are concrete: analysts
+re-derive the same tables, governance teams cannot classify sensitive columns, and
+downstream contracts drift from reality.
+
+Large language models make automatic description generation newly feasible, but a naive
+application---prompting a model with a table's column list---produces generic, often
+hallucinated text that erodes rather than builds trust. The missing ingredient is
+\emph{grounding}: real tables are produced by real transformation code, are described (in
+part) in scattered documentation, and are connected to other tables by lineage that
+carries semantic meaning. We argue that high-quality, trustworthy descriptions require
+fusing these signals, and that \emph{lineage in particular should shape the order of
+generation}, not merely the content of a single prompt.
+
+\paragraph{Contributions.}
+\begin{enumerate}
+  \item \textbf{Topological wave scheduling.} We schedule generation in lineage
+  (topological) order so that when a downstream table is described, the
+  \emph{already-generated} descriptions of its upstream tables are available as context.
+  Grounding thus propagates through the lineage DAG (Section~\ref{sec:method}).
+  \item \textbf{Retrieval-grounded, provenance-tagged prompting.} Each prompt fuses
+  schema signals, retrieved transformation code and documentation, and fine-grained
+  column lineage; every output carries a grounding note recording which signals were used
+  (Section~\ref{sec:method}--\ref{sec:system}).
+  \item \textbf{Closed-loop quality control.} A coverage loop retries empty objects and a
+  \emph{rework} loop scores each description's similarity to its grounding context and
+  regenerates the low-similarity tail under a temperature ramp until a target is met.
+  \item \textbf{A labelled benchmark and open system.} Because production catalogs lack
+  ground truth, we release a synthetic benchmark with known descriptions and lineage, an
+  evaluation harness (coverage / accuracy / faithfulness / grain recovery), and a
+  source- and model-agnostic reference implementation.
+\end{enumerate}
+
+\section{Related Work}
+\paragraph{Data cataloging and context services.} Systems such as
+Goods~\citep{halevy2016goods} and Ground~\citep{hellerstein2017ground} organize technical
+metadata and data context at scale but leave semantic description to humans. OMDG targets
+exactly this semantic layer and writes back into such catalogs.
+\paragraph{LLMs for data management.} Foundation models have been applied to data
+wrangling~\citep{narayan2022foundation} and to query synthesis from natural
+language~\citep{trummer2022codexdb}. We instead use LLMs for \emph{documentation}
+generation and, crucially, condition on lineage structure.
+\paragraph{Retrieval-augmented generation and its evaluation.} Our prompting builds on
+retrieval-augmented generation~\citep{lewis2020rag} with sentence-embedding
+retrieval~\citep{reimers2019sentencebert}; our faithfulness proxy is inspired by
+reference-free RAG evaluation~\citep{es2024ragas}. The novel element is treating the
+lineage DAG as a scheduling structure for grounded generation.
+
+\section{Problem Formulation}
+Let a catalog be a set of tables $T=\{t_1,\dots,t_n\}$. Each table $t$ has columns
+$C(t)$, an optional (usually empty) existing description, an optional view/SQL definition,
+and a lineage relation: coarse upstreams $U(t)\subseteq T$ and, per column $c$,
+fine-grained upstreams $U(c)$. External corpora provide code $\mathcal{K}$ and
+documentation $\mathcal{D}$. The goal is a function $g$ mapping each table and column to a
+description that is \emph{correct} (faithful to the table's true semantics) and
+\emph{grounded} (supported by available evidence). We evaluate against gold descriptions
+$y^\star$ using semantic similarity, and measure hallucination via similarity of an output
+to the context it was conditioned on.
+
+\section{Method}\label{sec:method}
+\paragraph{Topological wave scheduling.} We build a dependency graph over the in-scope
+tables from $U(\cdot)$ and partition it into \emph{waves} via Kahn's algorithm
+(Algorithm~\ref{alg:main}); cycles (rare, e.g.\ mutually recursive views) are broken by
+emitting the remaining nodes as a final wave. Tables in wave $k$ are generated only after
+all earlier waves, so the prompt for a downstream table includes the freshly generated
+descriptions of its upstreams.
+
+\paragraph{Retrieval-grounded prompting.} For table $t$ we assemble a prompt from: the
+schema layer (a medallion prior inferred from the schema name), the typed column list, the
+view SQL if present, the top-$k$ retrieved chunks from $\mathcal{K}$ and $\mathcal{D}$
+(exact-name matches plus embedding retrieval), inherited upstream descriptions, and
+column-lineage hints. The model returns JSON with a table description and per-column
+descriptions, and is instructed to describe only columns it can ground.
+
+\paragraph{Coverage and rework loops.} After the wave pass, a coverage loop retries
+objects that returned empty (up to a cap). A rework loop then computes, for each table,
+$s(t)=\cos\!\big(\phi(\hat y_t),\phi(\mathrm{ctx}_t)\big)$ where $\phi$ is a sentence
+embedder and $\mathrm{ctx}_t$ is the exact prompt context; if the mean $s$ is below a
+target accuracy, the tables with $s(t)$ below a threshold are regenerated with a
+vocabulary-reuse nudge and an increased temperature, for a bounded number of iterations.
+
+\begin{algorithm}[t]
+\caption{OMDG lineage-aware generation}\label{alg:main}
+\begin{algorithmic}[1]
+\Require tables $T$; LLM $M$; embedder $\phi$; targets $\tau_{\text{acc}},\theta$
+\State $W \gets \textsc{TopoWaves}(T)$ \Comment{Kahn over in-scope lineage}
+\State $D \gets \{\}$ \Comment{fqn $\to$ generated description}
+\For{wave $w \in W$}
+  \State $P \gets \{\textsc{Prompt}(t, D) : t \in w\}$
+  \State $\{\hat y_t\} \gets M.\textsc{Batch}(P)$; update $D$ with non-empty $\hat y_t$
+\EndFor
+\State \textsc{CoverageLoop}$(T, D)$ \Comment{retry empties}
+\While{$\mathrm{mean}_t\, s(t) < \tau_{\text{acc}}$ and iters left}
+  \State $R \gets \{t : s(t) < \theta\}$; regenerate $R$ with temperature ramp; update $D$
+\EndWhile
+\State \Return descriptions and per-object provenance
+\end{algorithmic}
+\end{algorithm}
+
+\section{System}\label{sec:system}
+OMDG is organized around three pluggable interfaces (Figure omitted for space): a
+\textbf{MetadataSource} (DataHub via GraphQL; Databricks and Snowflake via
+\texttt{information\_schema}), \textbf{ContextProvider}s (a code path and a document path,
+each backed by embedding retrieval), and an \textbf{LLMBackend} (OpenAI, Anthropic, AWS
+Bedrock, Google Vertex, Azure OpenAI behind one interface). The pipeline pulls metadata,
+attaches context, runs the generator, and writes a tidy CSV with one row per described
+object: \texttt{(object\_type, object\_name, parent\_table, context, output,
+grounding\_notes, similarity)}. Pairing each output with the exact context it saw makes
+the export directly consumable by an external LLM-judge / faithfulness
+pipeline~\citep{es2024ragas}.
+
+\section{Experiments}
+\paragraph{Benchmark.} Real catalogs cannot supply ground truth, so we generate a
+synthetic catalog from a library of domain \emph{concepts} (each with a known grain and
+typed, described columns) arranged in a medallion DAG
+(\texttt{raw}$\to$\texttt{intermediate}$\to$\texttt{mart}). Every table receives gold table
+and column descriptions; code and documentation context are granted per table with
+probability $p$, giving a knob to ablate context availability. Lineage inheritance is
+ablated by severing $U(\cdot)$ before generation.
+\paragraph{Metrics.} \emph{Coverage} (fraction of objects described), \emph{accuracy}
+(mean cosine of output vs.\ gold), \emph{faithfulness} (mean cosine of output vs.\
+context), and \emph{grain recovery} (fraction of table descriptions that recover the
+correct ``one row per \ldots'' phrase).
+\paragraph{Real-schema benchmark (TPC-H).} To complement the synthetic setting with
+external validity, we additionally evaluate on the public TPC-H schema (8 tables), whose
+names, types, and foreign-key relationships we did not author. Foreign keys are read as
+lineage edges, yielding the dependency DAG
+\texttt{region}$\to$\texttt{nation}$\to$\{\texttt{supplier},\texttt{customer}\}$\to$\{\texttt{orders},
+\texttt{partsupp}\}$\to$\texttt{lineitem}; gold descriptions are paraphrased from the
+public specification and documentation context is limited to a partial grain hint to
+avoid trivially leaking the target.
+
+\paragraph{Results.} Tables~\ref{tab:main} and~\ref{tab:tpch} report the four
+configurations on both benchmarks. External context improves semantic accuracy and is
+\emph{decisive} for grain recovery, which is near-zero without it on both benchmarks
+($0.00\to0.60$ synthetic; $0.00\to1.00$ TPC-H). The ordering
+full~$\ge$~no-lineage~$\ge$~no-context~$\ge$~schema-only holds on accuracy.
+\emph{Note on the reference backend.} The deterministic backend used for reproducibility
+does not \emph{semantically} exploit inherited upstream descriptions---only a
+context-following LLM does---so it is lineage-neutral by construction; the isolated
+effect of lineage inheritance on downstream accuracy is therefore reported from the
+real-LLM runs, which the released harness reproduces via
+\texttt{make benchmark-llm PROVIDER=\ldots\ MODEL=\ldots}. All ablation \emph{trends}
+(the effect of context, coverage, and grain recovery) are reproducible without API keys.
+
+\begin{table}[t]
+\centering
+\input{results_table}
+\caption{Ablations on the synthetic benchmark (5 concepts, 15 tables, 80 objects).
+Higher is better. Context contributes over the schema-only baseline; lineage adds grain
+recovery. Reproducible (deterministic backend).}
+\label{tab:main}
+\end{table}
+
+\begin{table}[t]
+\centering
+\input{results_table_tpch}
+\caption{Ablations on the public TPC-H schema (8 tables, 66 objects), with foreign keys
+read as lineage. Context yields large gains in accuracy and grain recovery on a schema we
+did not author.}
+\label{tab:tpch}
+\end{table}
+
+\subsection{Human-evaluation protocol}
+Because embedding similarity to a single reference under-credits correct paraphrases, we
+specify a human study to accompany real-catalog deployments (we release the protocol, not
+proprietary results). Annotators with domain familiarity rate each generated description
+on three 1--5 Likert axes---\emph{correctness} (is every claim true?), \emph{completeness}
+(is the grain and key semantics stated?), and \emph{groundedness} (is every claim
+supported by the shown context?)---in a blind A/B against the schema-only baseline, with a
+subset double-annotated to report inter-annotator agreement (Cohen's $\kappa$). Each item
+is presented with its \texttt{grounding\_notes} provenance so raters can verify support,
+and hallucinations (unsupported claims) are logged separately as a hard error rate.
+
+\section{Discussion and Limitations}
+The synthetic benchmark isolates mechanisms but does not capture the full messiness of
+production schemas; we therefore treat it as a controlled complement to, not a replacement
+for, human evaluation on real catalogs. The rework loop's similarity signal rewards lexical
+overlap with context, which can under-credit correct-but-terse descriptions; combining it
+with a reference-free judge is future work. Finally, generated descriptions should be
+surfaced with their grounding provenance and confidence so that human reviewers remain in
+the loop for high-stakes governance decisions.
+
+\section{Conclusion}
+OMDG shows that treating \emph{lineage as a scheduling structure}---not just prompt
+content---together with retrieval-grounded prompting and closed-loop quality control,
+yields catalog descriptions that are more accurate and better grounded than schema-only
+prompting, in a system that is agnostic to both the metadata source and the LLM provider.
+We release the system, benchmark, and harness to support reproducible research on semantic
+metadata generation.
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}

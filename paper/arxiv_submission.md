@@ -7,7 +7,7 @@
 **Primary category:** cs.DB (Databases)
 **Cross-list:** cs.LG (Machine Learning), cs.AI (Artificial Intelligence), cs.CL (Computation and Language)
 
-**Comments:** 9 pages, 2 tables, 1 algorithm. Code, synthetic + TPC-H benchmarks, and evaluation harness: https://github.com/<your-account>/OpenMetaDataGenerator (Apache-2.0).
+**Comments:** 9 pages, 2 tables, 1 algorithm. Code, synthetic + TPC-H benchmarks, and evaluation harness: https://github.com/rsdpyenugula/OpenMetaDataGenerator (Apache-2.0).
 
 **License:** arXiv non-exclusive license to distribute (compatible with later TMLR publication).
 
@@ -39,7 +39,7 @@ benchmarks, and evaluation harness.
 
 ## Submission checklist
 
-- [ ] Replace `<your-account>` with the real GitHub org/user in `main.tex`, `README.md`, `CITATION.cff`.
+- [x] GitHub handle set to `rsdpyenugula` in `main.tex`, `README.md`, `CITATION.cff`.
 - [ ] Build camera PDF: Overleaf or `make paper` (needs a TeX distribution).
 - [ ] Run real-LLM numbers and paste into `paper/results_table*.tex` (kept auto-generated):
       `make benchmark-llm PROVIDER=<p> MODEL=<m>` and `... --benchmark tpch`.

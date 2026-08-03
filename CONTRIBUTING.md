@@ -6,7 +6,7 @@ provider-agnostic contributions.
 ## Development setup
 
 ```bash
-git clone https://github.com/<your-account>/OpenMetaDataGenerator
+git clone https://github.com/rsdpyenugula/OpenMetaDataGenerator
 cd OpenMetaDataGenerator
 pip install -e ".[all]"
 pip install pytest ruff

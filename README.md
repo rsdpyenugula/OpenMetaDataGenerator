@@ -1,5 +1,8 @@
 # OpenMetaDataGenerator
 
+[![ci](https://github.com/<your-account>/OpenMetaDataGenerator/actions/workflows/ci.yml/badge.svg)](https://github.com/<your-account>/OpenMetaDataGenerator/actions/workflows/ci.yml)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 **Context-grounded, lineage-aware automatic description generation for data-catalog metadata.**
 
 Modern data platforms hold tens of thousands of tables whose technical metadata

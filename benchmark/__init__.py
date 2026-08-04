@@ -1,4 +1,4 @@
-from .generate import build_benchmark, Gold
-from .evaluate import evaluate, Metrics
+from .evaluate import Metrics, evaluate
+from .generate import Gold, build_benchmark
 
-__all__ = ["build_benchmark", "Gold", "evaluate", "Metrics"]
+__all__ = ["Gold", "Metrics", "build_benchmark", "evaluate"]

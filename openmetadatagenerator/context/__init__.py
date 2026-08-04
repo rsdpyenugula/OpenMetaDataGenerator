@@ -3,4 +3,4 @@ from .code import CodeContext
 from .docs import DocContext
 from .embedding import EmbeddingIndex, cosine
 
-__all__ = ["ContextProvider", "CodeContext", "DocContext", "EmbeddingIndex", "cosine"]
+__all__ = ["CodeContext", "ContextProvider", "DocContext", "EmbeddingIndex", "cosine"]

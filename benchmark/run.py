@@ -26,6 +26,7 @@ from pathlib import Path
 from openmetadatagenerator.config import GenerationConfig
 from openmetadatagenerator.context.embedding import EmbeddingIndex
 from openmetadatagenerator.generation import Generator
+
 from .evaluate import evaluate
 from .generate import build_benchmark
 

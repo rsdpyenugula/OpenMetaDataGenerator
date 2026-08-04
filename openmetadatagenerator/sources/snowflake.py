@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import os
 
-from .base import MetadataSource
 from ..model import Column, Table
+from .base import MetadataSource
 
 
 class SnowflakeSource(MetadataSource):

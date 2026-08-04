@@ -25,13 +25,13 @@ from __future__ import annotations
 import json
 import re
 
-from openmetadatagenerator.config import GenerationConfig
-from openmetadatagenerator.context.embedding import EmbeddingIndex
-from openmetadatagenerator.canonicalize import high_frequency_concepts
-from openmetadatagenerator.generation import Generator, _topo_waves
-from openmetadatagenerator.output import write_csv
 from benchmark.mock_llm import MockBackend
 from benchmark.public_sakila import build_sakila
+from openmetadatagenerator.canonicalize import high_frequency_concepts
+from openmetadatagenerator.config import GenerationConfig
+from openmetadatagenerator.context.embedding import EmbeddingIndex
+from openmetadatagenerator.generation import Generator, _topo_waves
+from openmetadatagenerator.output import write_csv
 
 # Obscure columns a name-only model won't attempt -> left for the sibling strategy.
 _OBSCURE = {"description", "rating", "district", "postal_code", "phone", "username",

@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ..model import Table
 from .base import ContextProvider
 from .embedding import EmbeddingIndex
-from ..model import Table
 
 _CODE_EXT = (".sql", ".py", ".scala", ".java", ".yml", ".yaml", ".sh", ".r")
 

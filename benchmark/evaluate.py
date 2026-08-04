@@ -16,15 +16,15 @@ are comparable across ablations run in the same environment.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import re
+from dataclasses import dataclass
 
 from openmetadatagenerator.context.embedding import EmbeddingIndex, cosine
 from openmetadatagenerator.model import GenerationResult
+
 from .generate import Gold
 
-_TAG = re.compile(r"^\s*\[(?:AIG\s*\|\s*(?:High|Low)|Reviewed)\]\s*", re.I)
+_TAG = re.compile(r"^\s*\[(?:AIG\s*\|\s*(?:High|Low)|Reviewed)\]\s*", re.IGNORECASE)
 
 
 def _untag(s: str) -> str:

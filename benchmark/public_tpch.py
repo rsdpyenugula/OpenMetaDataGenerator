@@ -13,6 +13,7 @@ the schema, names, and lineage are not authored to flatter the method.
 from __future__ import annotations
 
 from openmetadatagenerator.model import Column, Table
+
 from .generate import Gold
 
 # (schema.table): (columns[(name,type)], fk_upstream_tables, gold_table_desc, {col: gold})

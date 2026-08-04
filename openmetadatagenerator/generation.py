@@ -24,7 +24,7 @@ note), which the CSV export and the benchmark's faithfulness metric consume.
 from __future__ import annotations
 
 import json
-from collections import defaultdict
+import re
 
 from .canonicalize import canonical_key, group_columns, high_frequency_concepts
 from .config import GenerationConfig

@@ -31,7 +31,7 @@ class MockBackend(LLMBackend):
         cols = _columns(prompt)
 
         grain = ""
-        m = re.search(r"one row per [^.\n]+", prompt, re.I)
+        m = re.search(r"one row per [^.\n]+", prompt, re.IGNORECASE)
         if m:
             grain = m.group(0).lower()
 

@@ -18,6 +18,7 @@ Gold descriptions are paraphrased from the public Sakila documentation.
 from __future__ import annotations
 
 from openmetadatagenerator.model import Column, Table
+
 from .generate import Gold
 
 # table: (columns[(name,type)], fk{col: upstream_table}, table_gold, {col: gold})

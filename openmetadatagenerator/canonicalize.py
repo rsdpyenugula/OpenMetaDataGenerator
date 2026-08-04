@@ -1,4 +1,4 @@
-"""Canonicalization of column concepts across a catalog.
+r"""Canonicalization of column concepts across a catalog.
 
 Enterprise schemas are massively redundant: the same logical column
 (``dw_insert_ts``, ``customer_id``, ``amount``, ...) recurs across hundreds or

@@ -11,9 +11,9 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
+from ..model import Table
 from .base import ContextProvider
 from .embedding import EmbeddingIndex
-from ..model import Table
 
 _DOC_EXT = (".md", ".txt", ".rst", ".csv", ".tsv")
 

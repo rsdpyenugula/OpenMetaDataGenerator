@@ -16,8 +16,8 @@ import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from .base import MetadataSource
 from ..model import Column, Table
+from .base import MetadataSource
 
 _SEARCH = """
 query($input: SearchInput!) {

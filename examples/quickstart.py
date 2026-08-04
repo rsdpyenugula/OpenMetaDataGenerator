@@ -4,11 +4,11 @@ Run:  python examples/quickstart.py
 It builds a tiny synthetic catalog, generates descriptions, and writes a CSV.
 Swap ``MockBackend()`` for ``get_backend("anthropic")`` (etc.) to use a real LLM.
 """
+from benchmark.generate import build_benchmark
+from benchmark.mock_llm import MockBackend
 from openmetadatagenerator.context.embedding import EmbeddingIndex
 from openmetadatagenerator.generation import Generator
 from openmetadatagenerator.output import write_csv
-from benchmark.generate import build_benchmark
-from benchmark.mock_llm import MockBackend
 
 tables, _ = build_benchmark(n_entities=3, seed=42, context_prob=0.9)
 results = Generator(MockBackend(), EmbeddingIndex()).run(tables)

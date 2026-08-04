@@ -6,4 +6,4 @@ from .config import Config, GenerationConfig
 from .model import Column, GenerationResult, Table
 
 __version__ = "0.1.0"
-__all__ = ["Config", "GenerationConfig", "Table", "Column", "GenerationResult"]
+__all__ = ["Column", "Config", "GenerationConfig", "GenerationResult", "Table"]

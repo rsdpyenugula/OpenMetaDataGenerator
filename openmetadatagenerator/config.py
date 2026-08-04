@@ -31,12 +31,18 @@ class GenerationConfig:
     target_coverage: float = 0.90       # fraction of objects that must get a description
     target_accuracy: float = 0.75       # mean cosine(output, context) stop criterion
     rework_sim_threshold: float = 0.60  # per-item cosine below which we regenerate
-    max_coverage_iters: int = 4         # agentic passes to reach coverage target
-    max_rework_iters: int = 3           # passes to reach accuracy target
+    max_coverage_iters: int = 4         # table-level coverage retries
+    max_rework_iters: int = 3           # rework passes per rework strategy invocation
+    max_agent_iters: int = 6            # iterations of the controlled strategy-selection loop
+    judge: bool = True                  # LLM-judge gates whether a rework replaces the old desc
     temperature_start: float = 0.0
     temperature_step: float = 0.1       # ramp per rework pass to escape local minima
     workers: int = 8
     model_ctx_chars: int = 30_000       # soft cap on prompt context length
+    # Canonicalization (see canonicalize.py).
+    canonicalize: bool = True           # canonicalize-first + sibling propagation
+    canonical_min_freq: int = 3         # concept must recur in >= this many tables
+    inherit_lineage: bool = True        # columns inherit upstream column descriptions
 
 
 @dataclass

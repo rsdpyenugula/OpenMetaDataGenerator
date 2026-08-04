@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 
+from .canonicalize import canonical_key, group_columns, high_frequency_concepts
 from .config import GenerationConfig
 from .context.embedding import EmbeddingIndex, cosine
 from .llm.base import LLMBackend
@@ -118,6 +119,10 @@ class Generator:
     def run(self, tables: list[Table]) -> list[GenerationResult]:
         upstream_desc: dict[str, str] = {}
 
+        # --- canonicalize-first: describe frequent concepts once, seed everywhere -
+        if self.cfg.canonicalize:
+            self._canonical_prepass(tables)
+
         # --- wave generation -------------------------------------------------
         for wave in _topo_waves(tables):
             prompts = [_prompt(t, upstream_desc, self.cfg.model_ctx_chars) for t in wave]
@@ -129,12 +134,85 @@ class Generator:
                 t.generated_description = tdesc
                 t.prompt_context = p
                 for c in t.columns:
-                    c.generated_description = cdescs.get(c.name, cdescs.get(c.name.lower(), ""))
-                    c.prompt_context = p
+                    c.prompt_context = c.prompt_context or p
+                    # Do not overwrite a description seeded by the canonical pre-pass.
+                    if not c.generated_description:
+                        c.generated_description = cdescs.get(c.name, cdescs.get(c.name.lower(), ""))
                 if tdesc:
                     upstream_desc[t.fqn] = tdesc
 
-        # --- coverage loop ---------------------------------------------------
+        # --- table-level coverage fill (retry empty tables) ------------------
+        self._coverage_fill(tables, upstream_desc)
+
+        # --- planned, controlled agentic loop --------------------------------
+        # Each iteration measures coverage + per-item accuracy against the
+        # configured targets, then a strategy selector (LLM decision with a
+        # deterministic fallback) chooses the next action:
+        #   inherit — copy descriptions from same-named columns elsewhere (free)
+        #   sibling — infer empty columns from a table's described columns (LLM)
+        #   rework  — regenerate the lowest-similarity items, judge-gated (LLM)
+        #   stop    — targets met / no candidates remain
+        # The loop is bounded by max_agent_iters; inherit/sibling run at most once,
+        # rework may recur (each pass targets a fresh low-similarity tail).
+        excluded: set[str] = set()   # strategies that are done (ran once, or yielded 0)
+        temp = self.cfg.temperature_start
+        self.trace: list[tuple[str, dict]] = []  # audit of decisions per iteration
+        for _ in range(self.cfg.max_agent_iters):
+            gaps = self._measure_gaps(tables)
+            strategy = self._agent_decide(gaps, excluded)
+            self.trace.append((strategy, gaps))
+            if strategy == "stop":
+                break
+            if strategy == "inherit":
+                yielded = self._apply_inherit(tables)
+                excluded.add("inherit")             # coverage strategies run once
+            elif strategy == "sibling":
+                yielded = self._apply_sibling(tables, upstream_desc)
+                excluded.add("sibling")
+            else:  # rework
+                temp += self.cfg.temperature_step
+                yielded = self._apply_rework(tables, upstream_desc, temp)
+            if yielded == 0:                         # a strategy that stops helping is done
+                excluded.add(strategy)
+
+        return self._results(tables)
+
+    # ------------------------------------------------------------------ passes
+    def _canonical_prepass(self, tables: list[Table]) -> None:
+        """Generate one description per high-frequency canonical concept and seed it
+        onto every occurrence, so wave generation only describes the long tail.
+
+        This is the *canonicalize-first* strategy: it turns thousands of repeated
+        columns (e.g. ``dw_insert_ts`` in every table) into a single batched call and
+        guarantees identical wording for identical concepts.
+        """
+        concepts = high_frequency_concepts(tables, self.cfg.canonical_min_freq)
+        if not concepts:
+            return
+        keys = list(concepts)
+        prompts = []
+        for key in keys:
+            members = concepts[key]
+            example = members[0][1]
+            types = sorted({c.data_type for _, c in members if c.data_type})[:3]
+            tabs = sorted({t.schema + "." + t.name for t, _ in members})[:6]
+            prompts.append(
+                f"Concept: a column named '{example.name}' (type(s): {', '.join(types) or 'n/a'}) "
+                f"that recurs across tables: {', '.join(tabs)}.\n"
+                f"Write ONE concise, general description of this column that is accurate "
+                f"wherever it appears. Return just the description text.")
+        outs = self.llm.batch(prompts, system=_SYSTEM,
+                              temperature=self.cfg.temperature_start, workers=self.cfg.workers)
+        for key, raw in zip(keys, outs):
+            desc = raw.strip().strip('"')
+            if not desc:
+                continue
+            for _t, c in concepts[key]:
+                c.generated_description = desc
+                c.prompt_context = prompts[keys.index(key)]
+
+    def _coverage_fill(self, tables: list[Table], upstream_desc: dict[str, str]) -> None:
+        """Retry tables that came back without a description (table-level coverage)."""
         for _ in range(self.cfg.max_coverage_iters):
             missing = [t for t in tables if not t.generated_description]
             if not missing:
@@ -152,33 +230,205 @@ class Generator:
                 if tdesc:
                     upstream_desc[t.fqn] = tdesc
 
-        # --- accuracy rework loop -------------------------------------------
-        temp = self.cfg.temperature_start
-        for _ in range(self.cfg.max_rework_iters):
-            scored = [(t, cosine(self.index, t.generated_description, t.prompt_context))
-                      for t in tables if t.generated_description]
-            if not scored:
-                break
-            mean_acc = sum(s for _, s in scored) / len(scored)
-            if mean_acc >= self.cfg.target_accuracy:
-                break
-            temp += self.cfg.temperature_step
-            worst = [t for t, s in scored if s < self.cfg.rework_sim_threshold]
-            if not worst:
-                break
-            prompts = [_prompt(t, upstream_desc, self.cfg.model_ctx_chars)
-                       + "\n\nReuse concrete vocabulary from the context above."
-                       for t in worst]
-            outs = self.llm.batch(prompts, system=_SYSTEM, temperature=temp,
-                                  workers=self.cfg.workers)
-            for t, raw in zip(worst, outs):
-                tdesc, cdescs = _parse(raw)
-                if tdesc:
-                    t.generated_description = tdesc
-                    t.rework_iters += 1
-                    upstream_desc[t.fqn] = tdesc
+    # -------------------------------------------------- controller: measurement
+    def _measure_gaps(self, tables: list[Table]) -> dict:
+        """Measure coverage, per-item accuracy, and per-strategy candidate counts —
+        the state the strategy selector reasons over each iteration."""
+        total_cols = sum(len(t.columns) for t in tables)
+        described_cols = sum(1 for t in tables for c in t.columns if c.generated_description)
+        described_tables = sum(1 for t in tables if t.generated_description)
+        described_keys = {canonical_key(c.name) for t in tables for c in t.columns
+                          if c.generated_description}
+        inherit_c = sum(1 for t in tables for c in t.columns
+                        if not c.generated_description and canonical_key(c.name) in described_keys)
+        sibling_c = sum(1 for t in tables
+                        if any(not c.generated_description for c in t.columns)
+                        and any(c.generated_description for c in t.columns))
+        scored = [cosine(self.index, c.generated_description, c.prompt_context)
+                  for t in tables for c in t.columns
+                  if c.generated_description and c.prompt_context]
+        scored += [cosine(self.index, t.generated_description, t.prompt_context)
+                   for t in tables if t.generated_description and t.prompt_context]
+        accuracy = sum(scored) / len(scored) if scored else 0.0
+        rework_c = sum(1 for s in scored if s < self.cfg.rework_sim_threshold)
+        return {
+            "col_coverage": described_cols / total_cols if total_cols else 1.0,
+            "table_coverage": described_tables / len(tables) if tables else 1.0,
+            "accuracy": round(accuracy, 4),
+            "inherit_candidates": inherit_c,
+            "sibling_candidates": sibling_c,
+            "rework_candidates": rework_c,
+        }
 
-        return self._results(tables)
+    def _agent_decide(self, gaps: dict, excluded: set) -> str:
+        """Pick the next strategy. LLM decision with a deterministic fallback.
+
+        Coverage strategies (inherit, sibling) run at most once; rework may recur while
+        it keeps yielding improvements and accuracy is below target. ``excluded`` holds
+        strategies already run / exhausted. Returns one of inherit|sibling|rework|stop.
+        """
+        coverage_avail = [s for s in ("inherit", "sibling")
+                          if s not in excluded and gaps[f"{s}_candidates"] > 0]
+        rework_avail = ("rework" not in excluded and gaps["rework_candidates"] > 0
+                        and gaps["accuracy"] < self.cfg.target_accuracy)
+        if not coverage_avail and not rework_avail:
+            return "stop"
+        options = coverage_avail + (["rework"] if rework_avail else []) + ["stop"]
+        choice = self._ask_llm_strategy(gaps, options)
+        if choice in options:
+            return choice
+        # deterministic fallback: fill coverage first, then rework, then stop
+        if coverage_avail:
+            return coverage_avail[0]
+        return "rework" if rework_avail else "stop"
+
+    def _ask_llm_strategy(self, gaps: dict, options: list[str]) -> str:
+        prompt = (
+            f"Coverage: {gaps['col_coverage']:.0%} columns (target {self.cfg.target_coverage:.0%}). "
+            f"Accuracy: {gaps['accuracy']:.2f} (target {self.cfg.target_accuracy:.2f}).\n"
+            f"Candidates: inherit={gaps['inherit_candidates']}, sibling={gaps['sibling_candidates']}, "
+            f"rework={gaps['rework_candidates']}.\n"
+            f"Choose the single next strategy from: {', '.join(options)}. "
+            "Prefer filling coverage (inherit, then sibling) before rework; choose stop only "
+            "when no candidates remain and accuracy >= target. Reply with exactly one word.")
+        try:
+            out = self.llm.generate(
+                prompt, system="You select the next data-documentation strategy.").lower()
+            for w in re.findall(r"[a-z]+", out):
+                if w in options:
+                    return w
+        except Exception:
+            pass
+        return ""
+
+    # ---------------------------------------------------- controller: strategies
+    def _apply_inherit(self, tables: list[Table]) -> int:
+        """inherit — copy descriptions from same-named (canonical) columns elsewhere,
+        and from fine-grained upstream columns. Free and instant (no LLM call)."""
+        by_col: dict[tuple[str, str], str] = {}
+        for t in tables:
+            for c in t.columns:
+                if c.generated_description:
+                    by_col[(t.fqn, c.name.lower())] = c.generated_description
+        n = 0
+        if self.cfg.inherit_lineage:
+            for t in tables:
+                for c in t.columns:
+                    if c.generated_description or not c.upstreams:
+                        continue
+                    for up_fqn, up_col in c.upstreams:
+                        d = by_col.get((up_fqn, up_col.lower())) or next(
+                            (v for (fq, cn), v in by_col.items()
+                             if cn == up_col.lower() and (fq.endswith(up_fqn) or up_fqn.endswith(fq))), "")
+                        if d:
+                            c.generated_description = d
+                            n += 1
+                            break
+        for _key, members in group_columns(tables).items():
+            described = [c for _, c in members if c.generated_description]
+            if not described or len(members) == len(described):
+                continue
+            best = max(described, key=lambda c: (
+                cosine(self.index, c.generated_description, c.prompt_context)
+                if c.prompt_context else 0.0, len(c.generated_description)))
+            for _t, c in members:
+                if not c.generated_description:
+                    c.generated_description = best.generated_description
+                    c.prompt_context = c.prompt_context or best.prompt_context
+                    n += 1
+        return n
+
+    def _apply_sibling(self, tables: list[Table], upstream_desc: dict[str, str]) -> int:
+        """sibling — infer a table's still-empty columns from its already-described
+        columns (one small LLM call per table)."""
+        targets = [t for t in tables
+                   if any(not c.generated_description for c in t.columns)
+                   and any(c.generated_description for c in t.columns)]
+        if not targets:
+            return 0
+        prompts = []
+        for t in targets:
+            described = [f"{c.name}: {c.generated_description}"
+                         for c in t.columns if c.generated_description][:40]
+            empties = [c.name for c in t.columns if not c.generated_description]
+            prompts.append(
+                f"Table {t.fqn} ({t.layer}). Already-described columns:\n" + "\n".join(described) +
+                f"\n\nDescribe the remaining columns consistently with the above and the table's "
+                f"purpose. Return strict JSON {{\"columns\": {{\"<col>\": \"<desc>\"}}}}. "
+                f"Columns to describe: {', '.join(empties)}")
+        outs = self.llm.batch(prompts, system=_SYSTEM,
+                              temperature=self.cfg.temperature_start, workers=self.cfg.workers)
+        n = 0
+        for t, p, raw in zip(targets, prompts, outs):
+            _td, cdescs = _parse(raw)
+            for c in t.columns:
+                if not c.generated_description:
+                    d = cdescs.get(c.name, cdescs.get(c.name.lower(), ""))
+                    if d:
+                        c.generated_description = d
+                        c.prompt_context = c.prompt_context or p
+                        n += 1
+        return n
+
+    def _apply_rework(self, tables: list[Table], upstream_desc: dict[str, str], temp: float) -> int:
+        """rework — regenerate the lowest-similarity table descriptions with a
+        vocab-reuse nudge and a raised temperature; an LLM-judge gates replacement."""
+        scored = [(t, cosine(self.index, t.generated_description, t.prompt_context))
+                  for t in tables if t.generated_description and t.prompt_context]
+        worst = [t for t, s in scored if s < self.cfg.rework_sim_threshold]
+        if not worst:
+            return 0
+        prompts = [_prompt(t, upstream_desc, self.cfg.model_ctx_chars)
+                   + "\n\nReuse concrete vocabulary from the context above." for t in worst]
+        outs = self.llm.batch(prompts, system=_SYSTEM, temperature=temp, workers=self.cfg.workers)
+        pairs = []
+        for t, raw in zip(worst, outs):
+            tdesc, _c = _parse(raw)
+            if tdesc:
+                pairs.append((t, t.generated_description, tdesc))
+        # Only consider items whose regenerated text actually differs from the current
+        # one — an identical regeneration is not an improvement and must not keep the
+        # rework strategy alive (otherwise the controller spins).
+        pairs = [(t, old, new) for (t, old, new) in pairs if new.strip() != old.strip()]
+        if not pairs:
+            return 0
+        approved = self._judge(pairs) if self.cfg.judge else {id(p[0]) for p in pairs}
+        n = 0
+        for t, _old, new in pairs:
+            if id(t) in approved:
+                t.generated_description = new
+                t.rework_iters += 1
+                upstream_desc[t.fqn] = new
+                n += 1
+        return n
+
+    def _judge(self, pairs: list[tuple]) -> set:
+        """LLM-judge (with a deterministic grounding fallback): approve a reworked
+        description only if it is a genuine improvement over the previous one."""
+        if not pairs:
+            return set()
+        approved: set = set()
+        listing = "\n".join(f"{i}. OLD: {old}\n   NEW: {new}"
+                            for i, (_o, old, new) in enumerate(pairs))
+        prompt = ("For each item decide whether NEW is a more accurate, better-grounded "
+                  "description than OLD. Reply one line per item as '<index> APPROVE' or "
+                  "'<index> REJECT'.\n" + listing)
+        try:
+            out = self.llm.generate(prompt, system="You are a strict data-documentation reviewer.")
+            for line in out.splitlines():
+                m = re.match(r"\s*(\d+)\D+(approve|reject)", line.strip().lower())
+                if m and m.group(2) == "approve":
+                    approved.add(id(pairs[int(m.group(1))][0]))
+            if approved:
+                return approved
+        except Exception:
+            pass
+        # deterministic fallback: approve if NEW is at least as grounded as OLD
+        for obj, old, new in pairs:
+            ctx = getattr(obj, "prompt_context", "")
+            if not ctx or cosine(self.index, new, ctx) >= cosine(self.index, old, ctx):
+                approved.add(id(obj))
+        return approved
 
     def _results(self, tables: list[Table]) -> list[GenerationResult]:
         out: list[GenerationResult] = []

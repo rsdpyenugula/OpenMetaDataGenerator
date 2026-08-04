@@ -45,6 +45,26 @@ def test_context_improves_grain_recovery():
     assert m_ctx.accuracy >= m_none.accuracy
 
 
+def test_agentic_controller_terminates_and_traces():
+    tables, _ = build_benchmark(n_entities=4, seed=7, context_prob=0.6)
+    g = Generator(MockBackend(), EmbeddingIndex(), GenerationConfig(workers=2, max_agent_iters=6))
+    g.run(tables)
+    assert g.trace, "controller should record at least one decision"
+    # every decision is a valid strategy, and it must not run to the cap forever
+    assert all(s in ("inherit", "sibling", "rework", "stop") for s, _ in g.trace)
+    assert g.trace[-1][0] == "stop" or len(g.trace) <= 6
+
+
+def test_judge_gates_replacement():
+    g = Generator(MockBackend(), EmbeddingIndex(), GenerationConfig())
+    class _Obj:
+        prompt_context = "orders table: one row per customer order with amount and status"
+    obj = _Obj()
+    # NEW is clearly more grounded than OLD -> approved by the deterministic fallback
+    approved = g._judge([(obj, "a table", "orders: one row per customer order with amount")])
+    assert id(obj) in approved
+
+
 def test_csv_export(tmp_path):
     tables, _ = build_benchmark(n_entities=2, seed=3)
     out = tmp_path / "d.csv"

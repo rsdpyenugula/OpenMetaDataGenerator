@@ -24,14 +24,19 @@ The system is source- and model-agnostic:
 
 ## Method in one paragraph
 
-Tables are generated in **topological (lineage) order** so a downstream table's
-prompt can inherit the *already-generated* descriptions of its upstreams — grounding
-propagates through the lineage DAG instead of documenting each table in isolation.
-Each prompt fuses schema signals, retrieved code/doc context, and column-level
-lineage. Two closed control loops then run: a **coverage** loop retries empty objects,
-and a **rework** loop scores each description's semantic similarity to the exact
-context it was grounded in and regenerates the low-similarity tail with a rising
-temperature until a target accuracy is met. See [`generation.py`](openmetadatagenerator/generation.py).
+**Canonicalize-first:** the same logical column recurs across thousands of tables, so we
+canonicalize column names, describe each frequent concept once, and seed it everywhere
+(cheaper, and consistent). **Lineage-aware waves:** remaining tables are generated in
+topological order so a downstream table's prompt inherits the *already-generated*
+descriptions of its upstreams — grounding propagates through the lineage DAG. **Planned,
+controlled agentic loop:** a strategy controller then measures coverage and per-item
+accuracy against explicit targets each iteration and selects the next action —
+*inherit* (free copy from same-named/upstream columns), *sibling* (infer a table's empty
+columns from its described ones), *rework* (regenerate the low-similarity tail), or
+*stop* — with an **LLM-judge** gating whether a reworked description replaces the old one.
+The loop is bounded and auditable (the decision trace is logged). See
+[`generation.py`](openmetadatagenerator/generation.py) and
+[`canonicalize.py`](openmetadatagenerator/canonicalize.py).
 
 ## Install
 

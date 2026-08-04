@@ -14,6 +14,7 @@ def get_backend(provider: str, model: str = "", **kwargs) -> LLMBackend:
         "bedrock": b.BedrockBackend,
         "vertex": b.VertexBackend,
         "azure": b.AzureOpenAIBackend,
+        "gemini": b.GeminiBackend,
     }
     if provider not in table:
         raise ValueError(f"unknown LLM provider: {provider!r} "

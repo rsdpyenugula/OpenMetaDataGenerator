@@ -1,9 +1,11 @@
-"""Concrete LLM backends: OpenAI, Anthropic, AWS Bedrock, Google Vertex, Azure OpenAI.
+"""Concrete LLM backends: OpenAI, Anthropic, AWS Bedrock, Google Vertex, Azure OpenAI,
+and the Gemini Developer API.
 
 Each backend reads its credentials from the standard provider environment variables
-(e.g. ``OPENAI_API_KEY``, ``ANTHROPIC_API_KEY``, AWS/GCP default credential chains).
-The generator only depends on :class:`~openmetadatagenerator.llm.base.LLMBackend`, so
-adding a provider is a matter of implementing ``generate``.
+(e.g. ``OPENAI_API_KEY``, ``ANTHROPIC_API_KEY``, ``GEMINI_API_KEY``, AWS/GCP default
+credential chains). The generator only depends on
+:class:`~openmetadatagenerator.llm.base.LLMBackend`, so adding a provider is a matter of
+implementing ``generate``.
 """
 from __future__ import annotations
 
@@ -17,6 +19,7 @@ _DEFAULT_MODELS = {
     "bedrock": "anthropic.claude-3-5-sonnet-20240620-v1:0",
     "vertex": "gemini-1.5-pro",
     "azure": "gpt-4o-mini",
+    "gemini": "gemini-2.0-flash",
 }
 
 
@@ -89,6 +92,33 @@ class VertexBackend(LLMBackend):
         r = model.generate_content(
             prompt, generation_config={"max_output_tokens": self.max_tokens,
                                        "temperature": self.temperature if temperature is None else temperature})
+        return (r.text or "").strip()
+
+
+class GeminiBackend(LLMBackend):
+    """Google Gemini via the Gemini Developer API (``google-genai`` SDK).
+
+    Reads the API key from ``GEMINI_API_KEY`` (or ``GOOGLE_API_KEY``) in the environment;
+    the client never sees the key from source. Use ``vertex`` instead for Gemini served
+    through Google Cloud Vertex AI with project-based auth.
+    """
+    name = "gemini"
+
+    def __init__(self, model: str = "", **kw):
+        super().__init__(model or _DEFAULT_MODELS["gemini"], **kw)
+        from google import genai
+        self._genai = genai
+        # api_key defaults to $GEMINI_API_KEY / $GOOGLE_API_KEY.
+        self._client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY")
+                                    or os.environ.get("GOOGLE_API_KEY"))
+
+    def generate(self, prompt: str, system: str = "", temperature: float | None = None) -> str:
+        from google.genai import types
+        cfg = types.GenerateContentConfig(
+            system_instruction=system or None,
+            temperature=self.temperature if temperature is None else temperature,
+            max_output_tokens=self.max_tokens)
+        r = self._client.models.generate_content(model=self.model, contents=prompt, config=cfg)
         return (r.text or "").strip()
 
 

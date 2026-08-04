@@ -16,6 +16,13 @@ benchmark:
 benchmark-llm:
 	python -m benchmark.run --provider $(PROVIDER) --model $(MODEL)
 
+# Run all three benchmarks with a real provider (writes paper/results_table*.tex).
+# Example: GEMINI_API_KEY=... make benchmark-llm-all PROVIDER=gemini MODEL=gemini-2.0-flash
+benchmark-llm-all:
+	python -m benchmark.run --benchmark synthetic --provider $(PROVIDER) --model $(MODEL)
+	python -m benchmark.run --benchmark tpch      --provider $(PROVIDER) --model $(MODEL)
+	python -m benchmark.run --benchmark sakila    --provider $(PROVIDER) --model $(MODEL)
+
 paper:
 	cd paper && pdflatex main && bibtex main && pdflatex main && pdflatex main
 

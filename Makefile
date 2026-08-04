@@ -27,7 +27,7 @@ benchmark-llm-all:
 	python -m benchmark.run --benchmark sakila    --provider $(PROVIDER) --model $(MODEL)
 
 paper:
-	cd paper && pdflatex main && bibtex main && pdflatex main && pdflatex main
+	cd paper && (tectonic main.tex || (pdflatex main && bibtex main && pdflatex main && pdflatex main))
 
 clean:
 	rm -rf build dist *.egg-info **/__pycache__ paper/*.aux paper/*.log paper/*.bbl paper/*.blg paper/*.out

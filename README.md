@@ -112,9 +112,11 @@ then writes a CSV. Abridged output:
 Coverage climbs 62% → 88% → 100% as the controller picks `inherit` then `sibling`.
 Swap the demo backend for `get_backend("anthropic")` (etc.) to run it with a real LLM.
 
-A second demo shows the **DuckDB + HNSW local RAG** retrieving a snippet into a table's prompt:
+A second demo shows the **DuckDB + HNSW local RAG** retrieving a snippet into a table's prompt
+(needs the `store` extra for DuckDB):
 
 ```bash
+pip install -e ".[store]"
 make rag-demo      # or: python examples/rag_demo.py
 ```
 It indexes a sample code + docs corpus into `kb_embed_index`, retrieves the right chunk

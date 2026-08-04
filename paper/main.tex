@@ -337,6 +337,18 @@ subset double-annotated to report inter-annotator agreement (Cohen's $\kappa$). 
 is presented with its \texttt{grounding\_notes} provenance so raters can verify support,
 and hallucinations (unsupported claims) are logged separately as a hard error rate.
 
+\subsection{Reproducibility statement}
+The system, the synthetic generator, both public-schema benchmarks (TPC-H, Sakila), and the
+evaluation harness are released under Apache-2.0 at the URL on the title page. All ablation
+\emph{trends} in Tables~\ref{tab:main}--\ref{tab:sakila} reproduce with \emph{no API keys and
+no GPU} via a deterministic reference backend: \texttt{pip install -e .} then
+\texttt{make benchmark} (and \texttt{-\/-benchmark tpch|sakila}); each run completes in
+seconds and regenerates the exact result tables in this paper. Real-LLM results are
+reproduced with \texttt{make benchmark-llm PROVIDER=$p$ MODEL=$m$} against any of the six
+supported providers. Unit tests (\texttt{make test}) and two runnable demos---the controlled
+agentic loop and the DuckDB+HNSW retrieval---execute on a fresh install, and continuous
+integration runs the tests and both benchmarks on Python 3.9--3.12.
+
 \section{Discussion and Limitations}
 The synthetic benchmark isolates mechanisms but does not capture the full messiness of
 production schemas; we therefore treat it as a controlled complement to, not a replacement

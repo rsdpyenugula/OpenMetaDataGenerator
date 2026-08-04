@@ -20,7 +20,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import duckdb
+try:
+    import duckdb
+except ModuleNotFoundError:
+    raise SystemExit(
+        "This demo uses the DuckDB-backed RAG index. Install the store extra first:\n"
+        '    pip install -e ".[store]"      (or:  pip install duckdb)')
 
 from openmetadatagenerator.config import GenerationConfig
 from openmetadatagenerator.context.embedding import EmbeddingIndex

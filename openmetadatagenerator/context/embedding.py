@@ -110,12 +110,27 @@ class EmbeddingIndex:
 
 def cosine(index: EmbeddingIndex, a: str, b: str) -> float:
     """Similarity of two strings using the index's model (or lexical fallback)."""
+    return cosine_pairs(index, [(a, b)])[0] if a and b else 0.0
+
+
+def cosine_pairs(index: EmbeddingIndex, pairs: list[tuple[str, str]]) -> list[float]:
+    """Batched similarity of many ``(a, b)`` pairs.
+
+    All texts are embedded in a single encoder call, so scoring the whole catalog is one
+    parallel/batched pass rather than a Python loop of per-pair encodes -- this is the
+    similarity-based evaluation the controller runs each iteration to measure accuracy and
+    select the rework tail. Falls back to lexical token cosine with no embedding model.
+    """
     index._load()
+    if not pairs:
+        return []
     if index._model:
         import numpy as np
-        e = index._model.encode([a, b], normalize_embeddings=True)
-        return float(np.dot(e[0], e[1]))
-    at, bt = _tokens(a), _tokens(b)
-    if not at or not bt:
-        return 0.0
-    return len(at & bt) / math.sqrt(len(at) * len(bt))
+        texts = [t for pair in pairs for t in pair]              # flatten [a0,b0,a1,b1,...]
+        emb = np.asarray(index._model.encode(texts, normalize_embeddings=True))
+        return [float(np.dot(emb[2 * i], emb[2 * i + 1])) for i in range(len(pairs))]
+    out = []
+    for a, b in pairs:
+        at, bt = _tokens(a), _tokens(b)
+        out.append(len(at & bt) / math.sqrt(len(at) * len(bt)) if at and bt else 0.0)
+    return out

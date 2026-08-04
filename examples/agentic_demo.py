@@ -97,11 +97,13 @@ def main() -> None:
     gen = Generator(DemoBackend(), EmbeddingIndex(), cfg)
     results = gen.run(tables)
 
-    print("\n[3] controlled agentic decision trace (measured vs. targets each iteration):")
-    print(f"      {'strategy':9s} {'coverage':>9} {'accuracy':>9}  cand(inh/sib/rew)")
+    print("\n[3] controlled agentic trace (chain-of-thought rationale + temperature ramp):")
+    print(f"      {'action':8s} {'cov':>4} {'acc':>5} {'temp':>5}  i/s/r   rationale")
     for strat, g in gen.trace:
-        print(f"      {strat:9s} {g['col_coverage']:>8.0%} {g['accuracy']:>9.2f}  "
-              f"{g['inherit_candidates']}/{g['sibling_candidates']}/{g['rework_candidates']}")
+        print(f"      {strat:8s} {g['col_coverage']:>4.0%} {g['accuracy']:>5.2f} "
+              f"{g.get('temperature', 0.0):>5.2f}  "
+              f"{g['inherit_candidates']}/{g['sibling_candidates']}/{g['rework_candidates']}"
+              f"  {g.get('rationale', '')[:42]}")
 
     print("\n[4] sample descriptions with confidence tags + grounding provenance:")
     for t in [x for x in tables if x.name in ("payment", "film", "country")]:

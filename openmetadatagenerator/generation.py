@@ -28,7 +28,7 @@ import re
 
 from .canonicalize import canonical_key, group_columns, high_frequency_concepts
 from .config import GenerationConfig
-from .context.embedding import EmbeddingIndex, cosine
+from .context.embedding import EmbeddingIndex, cosine, cosine_pairs
 from .llm.base import LLMBackend
 from .model import GenerationResult, Table
 
@@ -171,10 +171,13 @@ class Generator:
         # rework may recur (each pass targets a fresh low-similarity tail).
         excluded: set[str] = set()   # strategies that are done (ran once, or yielded 0)
         temp = self.cfg.temperature_start
-        self.trace: list[tuple[str, dict]] = []  # audit of decisions per iteration
+        # Decision trace: (action, {measured gaps + controlled-CoT rationale + temperature}).
+        self.trace: list[tuple[str, dict]] = []
         for _ in range(self.cfg.max_agent_iters):
             gaps = self._measure_gaps(tables)
-            strategy = self._agent_decide(gaps, excluded)
+            strategy, rationale = self._agent_decide(gaps, excluded)  # controlled CoT
+            gaps["rationale"] = rationale
+            gaps["temperature"] = round(temp, 2)
             self.trace.append((strategy, gaps))
             if strategy == "stop":
                 break
@@ -184,8 +187,9 @@ class Generator:
             elif strategy == "sibling":
                 yielded = self._apply_sibling(tables, upstream_desc)
                 excluded.add("sibling")
-            else:  # rework
-                temp += self.cfg.temperature_step
+            else:  # rework — dynamic temperature ramp: escalate each pass to escape
+                temp = min(1.0, temp + self.cfg.temperature_step)  # local minima
+                gaps["temperature"] = round(temp, 2)
                 yielded = self._apply_rework(tables, upstream_desc, temp)
             if yielded == 0:                         # a strategy that stops helping is done
                 excluded.add(strategy)
@@ -276,11 +280,14 @@ class Generator:
         sibling_c = sum(1 for t in tables
                         if any(not c.generated_description for c in t.columns)
                         and any(c.generated_description for c in t.columns))
-        scored = [cosine(self.index, c.generated_description, c.prompt_context)
-                  for t in tables for c in t.columns
-                  if c.generated_description and c.prompt_context]
-        scored += [cosine(self.index, t.generated_description, t.prompt_context)
-                   for t in tables if t.generated_description and t.prompt_context]
+        # Parallel similarity-based evaluation: score every described object against the
+        # exact context it was grounded in, in one batched encoder pass.
+        pairs = [(c.generated_description, c.prompt_context)
+                 for t in tables for c in t.columns
+                 if c.generated_description and c.prompt_context]
+        pairs += [(t.generated_description, t.prompt_context)
+                  for t in tables if t.generated_description and t.prompt_context]
+        scored = cosine_pairs(self.index, pairs)
         accuracy = sum(scored) / len(scored) if scored else 0.0
         rework_c = sum(1 for s in scored if s < self.cfg.rework_sim_threshold)
         return {
@@ -292,46 +299,61 @@ class Generator:
             "rework_candidates": rework_c,
         }
 
-    def _agent_decide(self, gaps: dict, excluded: set) -> str:
-        """Pick the next strategy. LLM decision with a deterministic fallback.
+    def _agent_decide(self, gaps: dict, excluded: set) -> tuple[str, str]:
+        """Pick the next strategy via a *controlled chain-of-thought*, with a deterministic
+        fallback. Returns ``(action, rationale)``.
 
         Coverage strategies (inherit, sibling) run at most once; rework may recur while
         it keeps yielding improvements and accuracy is below target. ``excluded`` holds
-        strategies already run / exhausted. Returns one of inherit|sibling|rework|stop.
+        strategies already run / exhausted. The action is one of inherit|sibling|rework|stop.
         """
         coverage_avail = [s for s in ("inherit", "sibling")
                           if s not in excluded and gaps[f"{s}_candidates"] > 0]
         rework_avail = ("rework" not in excluded and gaps["rework_candidates"] > 0
                         and gaps["accuracy"] < self.cfg.target_accuracy)
         if not coverage_avail and not rework_avail:
-            return "stop"
+            return "stop", "targets met / no candidates remain"
         options = coverage_avail + (["rework"] if rework_avail else []) + ["stop"]
-        choice = self._ask_llm_strategy(gaps, options)
+        choice, reason = self._ask_llm_strategy(gaps, options)
         if choice in options:
-            return choice
+            return choice, reason or "(llm decision)"
         # deterministic fallback: fill coverage first, then rework, then stop
         if coverage_avail:
-            return coverage_avail[0]
-        return "rework" if rework_avail else "stop"
+            return coverage_avail[0], "fallback: fill coverage before accuracy"
+        if rework_avail:
+            return "rework", "fallback: accuracy below target, rework candidates remain"
+        return "stop", "fallback: nothing actionable"
 
-    def _ask_llm_strategy(self, gaps: dict, options: list[str]) -> str:
+    def _ask_llm_strategy(self, gaps: dict, options: list[str]) -> tuple[str, str]:
+        """Controlled chain-of-thought: the controller reasons in one short sentence over
+        the measured gaps, then commits to a single action from a *constrained* set. The
+        rationale is logged in the decision trace for audit; bounding the action space keeps
+        the reasoning from running away (a controlled, not free-form, CoT)."""
         prompt = (
             f"Coverage: {gaps['col_coverage']:.0%} columns (target {self.cfg.target_coverage:.0%}). "
             f"Accuracy: {gaps['accuracy']:.2f} (target {self.cfg.target_accuracy:.2f}).\n"
             f"Candidates: inherit={gaps['inherit_candidates']}, sibling={gaps['sibling_candidates']}, "
             f"rework={gaps['rework_candidates']}.\n"
-            f"Choose the single next strategy from: {', '.join(options)}. "
-            "Prefer filling coverage (inherit, then sibling) before rework; choose stop only "
-            "when no candidates remain and accuracy >= target. Reply with exactly one word.")
+            f"Allowed actions: {', '.join(options)}. Prefer filling coverage (inherit, then "
+            "sibling) before rework; choose stop only when no candidates remain and accuracy "
+            ">= target.\nReason in ONE short sentence, then decide. Reply exactly as:\n"
+            "Reason: <one sentence>\nAction: <one allowed action>")
         try:
             out = self.llm.generate(
-                prompt, system="You select the next data-documentation strategy.").lower()
-            for w in re.findall(r"[a-z]+", out):
+                prompt, system="You are a controller selecting the next data-documentation strategy.")
+            reason = ""
+            rm = re.search(r"reason\s*:\s*(.+)", out, re.I)
+            if rm:
+                reason = rm.group(1).strip().splitlines()[0][:200]
+            am = re.search(r"action\s*:\s*([a-z]+)", out, re.I)
+            if am and am.group(1).lower() in options:
+                return am.group(1).lower(), reason
+            for w in re.findall(r"[a-z]+", out.lower()):  # tolerate loose formatting
                 if w in options:
-                    return w
+                    return w, reason
         except Exception:
             pass
-        return ""
+        return "", ""
 
     # ---------------------------------------------------- controller: strategies
     def _apply_inherit(self, tables: list[Table]) -> int:
@@ -405,9 +427,10 @@ class Generator:
     def _apply_rework(self, tables: list[Table], upstream_desc: dict[str, str], temp: float) -> int:
         """rework — regenerate the lowest-similarity table descriptions with a
         vocab-reuse nudge and a raised temperature; an LLM-judge gates replacement."""
-        scored = [(t, cosine(self.index, t.generated_description, t.prompt_context))
-                  for t in tables if t.generated_description and t.prompt_context]
-        worst = [t for t, s in scored if s < self.cfg.rework_sim_threshold]
+        cand = [t for t in tables if t.generated_description and t.prompt_context]
+        scores = cosine_pairs(self.index,  # parallel similarity eval over the candidates
+                              [(t.generated_description, t.prompt_context) for t in cand])
+        worst = [t for t, s in zip(cand, scores) if s < self.cfg.rework_sim_threshold]
         if not worst:
             return 0
         prompts = [_prompt(t, upstream_desc, self.cfg.model_ctx_chars)

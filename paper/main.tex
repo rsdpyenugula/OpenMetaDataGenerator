@@ -94,12 +94,16 @@ generation}, not merely the content of a single prompt.
   column names, generate a description once per high-frequency concept, and seed it
   everywhere, cutting cost and enforcing identical wording for identical concepts.
   \item \textbf{A planned, controlled agentic loop.} Rather than a fixed pipeline, a
-  \emph{strategy controller} measures coverage and per-item accuracy against explicit
-  targets each iteration and selects the next action---\emph{inherit} (free copy from
-  same-named/upstream columns), \emph{sibling} (infer a table's empty columns from its
-  described ones), \emph{rework} (regenerate the low-similarity tail), or \emph{stop}---and
-  an \emph{LLM-judge} gates whether a reworked description replaces the previous one. The
-  loop terminates when targets are met or no strategy yields further improvement.
+  \emph{strategy controller} runs a \emph{parallel similarity-based evaluation} of the whole
+  catalog against explicit coverage and accuracy targets, then, via a \emph{controlled
+  chain-of-thought} (one-sentence reasoning over a constrained action set), selects the next
+  action: \emph{targeted coverage} (\emph{inherit} free copies from same-named/upstream
+  columns, \emph{sibling} infers a table's empty columns from its described ones),
+  \emph{rework} (regenerate the low-similarity tail under \emph{dynamic temperature
+  ramping}), or \emph{stop}. An \emph{LLM-judge} gates whether a reworked description
+  replaces the previous one, and every decision (action, rationale, temperature, measured
+  state) is logged to an auditable trace. The loop terminates when targets are met or no
+  strategy yields further improvement.
   \item \textbf{An auditable, incremental substrate.} A local DuckDB knowledge store
   persists pulled metadata, table- and column-level lineage, each description's exact
   grounding context and similarity, while a persistent, model-stamped \textbf{HNSW}
@@ -181,22 +185,30 @@ mechanism (identical concepts get identical wording).
 
 \paragraph{Planned, controlled agentic loop.} After the wave pass and a table-level
 coverage fill, control passes to a \emph{strategy controller} (Algorithm~\ref{alg:main}).
-Each iteration it measures the current state---column coverage, per-item accuracy
-$s(x)=\cos(\phi(\hat y_x),\phi(\mathrm{ctx}_x))$ aggregated over objects, and the number of
-candidates for each strategy---and \emph{compares this state against the configured
-coverage and accuracy targets} to select the next action:
-\emph{inherit} (copy a description from a same-named or fine-grained-upstream column; free,
-no model call), \emph{sibling} (infer a table's still-empty columns from its
-already-described columns; one small call per table), \emph{rework} (regenerate the
-lowest-similarity items with a vocabulary-reuse nudge and a raised temperature), or
-\emph{stop}. The selection is made by the LLM with a deterministic fallback (fill coverage
-before accuracy). A \emph{rework} candidate is admitted only if its regenerated text
-differs from the current one, and an \textbf{LLM-judge} decides per item whether the new
-description is a genuine improvement before it replaces the old one. Coverage strategies run
-at most once; \emph{rework} recurs while it keeps yielding accepted improvements. The loop
-terminates when targets are met, no strategy yields further change, or an iteration cap is
-reached---so the process is agentic but \emph{bounded and auditable} (we log the chosen
-strategy and measured state each iteration).
+Each iteration proceeds in four steps.
+\emph{(1) Parallel similarity evaluation.} Every described object is scored against the
+exact context it was grounded in, $s(x)=\cos(\phi(\hat y_x),\phi(\mathrm{ctx}_x))$, in a
+single batched encoder pass; the mean is the current accuracy and the low-scoring items are
+the rework candidates.
+\emph{(2) Controlled chain-of-thought.} Given the measured coverage, accuracy, and
+per-strategy candidate counts \emph{relative to the targets} $\tau_{\text{cov}},\tau_{\text{acc}}$,
+the LLM reasons in one short sentence and commits to a single action drawn from a
+\emph{constrained} set---a bounded, logged chain-of-thought rather than free-form
+reasoning---with a deterministic rule (fill coverage before accuracy) as fallback.
+\emph{(3) Act.} The chosen action is one of: \emph{inherit} (copy a description from a
+same-named or fine-grained-upstream column; free, no model call), \emph{sibling} (infer a
+table's still-empty columns from its described ones; one small call per table)---together
+these implement \emph{targeted coverage}, filling exactly the undescribed objects toward
+$\tau_{\text{cov}}$---\emph{rework} (regenerate the lowest-similarity items with a
+vocabulary-reuse nudge under \emph{dynamic temperature ramping}: each successive rework
+pass raises the sampling temperature to escape local minima), or \emph{stop}. A rework
+output replaces the current one only if it differs and an \textbf{LLM-judge} rules it a
+genuine improvement.
+\emph{(4) Bookkeeping.} Coverage strategies run at most once; rework recurs while it yields
+accepted improvements. The loop terminates when targets are met, no strategy yields further
+change, or an iteration cap is reached. Every iteration's chosen action, rationale, measured
+state, and temperature are appended to a \emph{decision trace}, so the agentic process is
+\emph{bounded and fully auditable}.
 
 \paragraph{Confidence tagging.} Every emitted description is prefixed with a
 beginning-of-string confidence tag---\texttt{[AIG\,|\,High]} when the object was grounded

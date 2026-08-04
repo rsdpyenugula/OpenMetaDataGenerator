@@ -38,21 +38,24 @@ a large language model (LLM) in three complementary signals: table \emph{schema}
 external \emph{context} (transformation code and documentation), and data
 \emph{lineage}. OMDG contributes (i) a \emph{topological wave scheduler} that generates
 descriptions in lineage order so downstream tables inherit the grounded descriptions of
-their upstreams, propagating context through the lineage DAG; (ii) a
-\emph{retrieval-grounded prompting} scheme that fuses schema, code, documentation, and
-column-level lineage; and (iii) two closed control loops---a coverage loop and an
-accuracy-driven \emph{rework} loop that scores each description's semantic similarity to
-the exact context it was grounded in and regenerates a low-similarity tail. The system
-is source-agnostic (DataHub, Databricks, Snowflake) and model-agnostic (OpenAI,
-Anthropic, Bedrock, Vertex, Azure), and emits auditable, provenance-tagged descriptions.
-Because production catalogs lack ground-truth semantics, we introduce a synthetic,
-fully-labelled benchmark with a medallion lineage DAG and controllable context, and
-complement it with a real, public schema (TPC-H) whose foreign keys we read as lineage; we
-measure coverage, semantic accuracy against ground truth, and a faithfulness
-(anti-hallucination) proxy. Ablations on both benchmarks show that external context
-substantially improves accuracy and grain recovery over a schema-only baseline, and we
-specify a human-evaluation protocol for real-catalog deployments. We release the system,
-benchmark, and evaluation harness under Apache-2.0.
+their upstreams, propagating context through the lineage DAG; (ii) \emph{canonicalize-first}
+generation that describes each recurring column concept once and seeds it across the
+catalog, cutting cost and enforcing consistency; (iii) a \emph{planned, controlled agentic
+loop} that measures coverage and per-item accuracy against explicit targets each iteration
+and selects the next gap-filling strategy---inherit, sibling, or rework---with an LLM-judge
+gating replacements; and (iv) an auditable substrate: a local \textbf{DuckDB} knowledge
+store and a persistent, incremental \textbf{HNSW} retrieval index that make runs
+reproducible and incremental, plus beginning-of-string confidence tags on every
+description. The system is source-agnostic (DataHub, Databricks, Snowflake) and
+model-agnostic (OpenAI, Anthropic, Bedrock, Vertex, Azure, Gemini). Because production
+catalogs lack ground-truth semantics, we introduce a synthetic, fully-labelled benchmark
+with a medallion lineage DAG and controllable context, and complement it with two public
+schemas (TPC-H and Sakila) whose foreign keys we read as lineage; we measure coverage,
+semantic accuracy against ground truth, and a faithfulness (anti-hallucination) proxy.
+Ablations across all three benchmarks show that external context substantially improves
+accuracy and grain recovery over a schema-only baseline, and we specify a human-evaluation
+protocol for real-catalog deployments. We release the system, benchmarks, and evaluation
+harness under Apache-2.0.
 \end{abstract}
 
 \section{Introduction}
@@ -65,7 +68,8 @@ practice, missing for the long tail of tables. The consequences are concrete: an
 re-derive the same tables, governance teams cannot classify sensitive columns, and
 downstream contracts drift from reality.
 
-Large language models make automatic description generation newly feasible, but a naive
+Large language models~\citep{vaswani2017attention,brown2020language} make automatic
+description generation newly feasible, but a naive
 application---prompting a model with a table's column list---produces generic, often
 hallucinated text that erodes rather than builds trust. The missing ingredient is
 \emph{grounding}: real tables are produced by real transformation code, are described (in
@@ -95,10 +99,16 @@ generation}, not merely the content of a single prompt.
   described ones), \emph{rework} (regenerate the low-similarity tail), or \emph{stop}---and
   an \emph{LLM-judge} gates whether a reworked description replaces the previous one. The
   loop terminates when targets are met or no strategy yields further improvement.
+  \item \textbf{An auditable, incremental substrate.} A local DuckDB knowledge store
+  persists pulled metadata, table- and column-level lineage, each description's exact
+  grounding context and similarity, while a persistent, model-stamped \textbf{HNSW}
+  retrieval index over code/doc/view chunks makes both retrieval and re-runs incremental
+  (only changed inputs are re-embedded). Descriptions carry beginning-of-string confidence
+  tags so consumers see provenance and reviewers can triage the low-confidence tail.
   \item \textbf{A labelled benchmark and open system.} Because production catalogs lack
-  ground truth, we release a synthetic benchmark with known descriptions and lineage, an
-  evaluation harness (coverage / accuracy / faithfulness / grain recovery), and a
-  source- and model-agnostic reference implementation.
+  ground truth, we release a synthetic benchmark plus two public-schema benchmarks (TPC-H,
+  Sakila) with known descriptions and lineage, an evaluation harness (coverage / accuracy /
+  faithfulness / grain recovery), and a source- and model-agnostic reference implementation.
 \end{enumerate}
 
 \section{Related Work}

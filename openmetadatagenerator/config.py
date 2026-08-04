@@ -35,6 +35,7 @@ class GenerationConfig:
     max_rework_iters: int = 3           # rework passes per rework strategy invocation
     max_agent_iters: int = 6            # iterations of the controlled strategy-selection loop
     judge: bool = True                  # LLM-judge gates whether a rework replaces the old desc
+    tag_confidence: bool = True         # prefix [AIG | High] / [AIG | Low] confidence tags
     temperature_start: float = 0.0
     temperature_step: float = 0.1       # ramp per rework pass to escape local minima
     workers: int = 8

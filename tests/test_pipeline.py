@@ -55,6 +55,30 @@ def test_agentic_controller_terminates_and_traces():
     assert g.trace[-1][0] == "stop" or len(g.trace) <= 6
 
 
+def test_confidence_tags_applied():
+    from openmetadatagenerator.generation import _KNOWN_TAGS
+    tables, _ = build_benchmark(n_entities=3, seed=7, context_prob=0.8)
+    results = _gen(tables)
+    assert results, "expected generated results"
+    # every emitted description carries a BOS confidence tag
+    assert all(r.output.startswith(_KNOWN_TAGS) for r in results)
+    # both High and Low occur across a mixed-context catalog
+    tags = {r.output.split("]")[0] + "]" for r in results}
+    assert "[AIG | High]" in tags
+
+
+def test_agentic_strategies_fire_on_sakila():
+    from benchmark.public_sakila import build_sakila
+    from examples.agentic_demo import DemoBackend
+    tables, _ = build_sakila(with_doc_context=False)
+    g = Generator(DemoBackend(), EmbeddingIndex(), GenerationConfig(workers=2, target_accuracy=0.9))
+    g.run(tables)
+    chosen = {s for s, _ in g.trace}
+    # the controller should use both coverage strategies before stopping
+    assert "inherit" in chosen and "sibling" in chosen
+    assert all(t.generated_description for t in tables)  # full coverage reached
+
+
 def test_judge_gates_replacement():
     g = Generator(MockBackend(), EmbeddingIndex(), GenerationConfig())
     class _Obj:

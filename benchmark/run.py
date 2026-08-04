@@ -47,6 +47,9 @@ def _make_instance(benchmark: str, ctx: bool, n_entities: int, seed: int):
     if benchmark == "tpch":
         from .public_tpch import build_tpch
         return build_tpch(with_doc_context=ctx)
+    if benchmark == "sakila":
+        from .public_sakila import build_sakila
+        return build_sakila(with_doc_context=ctx)
     return build_benchmark(n_entities=n_entities, seed=seed,
                            context_prob=0.8 if ctx else 0.0)
 
@@ -111,7 +114,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--provider", default="mock")
     ap.add_argument("--model", default="")
-    ap.add_argument("--benchmark", choices=["synthetic", "tpch"], default="synthetic")
+    ap.add_argument("--benchmark", choices=["synthetic", "tpch", "sakila"], default="synthetic")
     ap.add_argument("--n-entities", type=int, default=5)
     ap.add_argument("--seed", type=int, default=7)
     args = ap.parse_args()

@@ -18,9 +18,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import re
+
 from openmetadatagenerator.context.embedding import EmbeddingIndex, cosine
 from openmetadatagenerator.model import GenerationResult
 from .generate import Gold
+
+_TAG = re.compile(r"^\s*\[(?:AIG\s*\|\s*(?:High|Low)|Reviewed)\]\s*", re.I)
+
+
+def _untag(s: str) -> str:
+    """Strip a leading confidence tag so scoring compares semantics, not the tag."""
+    return _TAG.sub("", s or "").strip()
 
 
 @dataclass
@@ -43,16 +52,17 @@ def evaluate(results: list[GenerationResult], gold: Gold, n_expected: int,
 
     acc, faith, grain_hits, grain_total = [], [], 0, 0
     for r in results:
+        out = _untag(r.output)
         g = gold_map.get(r.object_name)
         if g:
-            acc.append(cosine(index, r.output, g))
+            acc.append(cosine(index, out, g))
         if r.context:
-            faith.append(cosine(index, r.output, r.context))
+            faith.append(cosine(index, out, r.context))
         if r.object_type == "table":
             grain_total += 1
             gg = gold.table_desc.get(r.object_name, "")
             want = _grain(gg)
-            if want and want in r.output.lower():
+            if want and want in out.lower():
                 grain_hits += 1
 
     coverage = len(results) / n_expected if n_expected else 0.0

@@ -6,6 +6,9 @@ install:
 test:
 	python -m pytest -q tests/
 
+demo:
+	python examples/agentic_demo.py
+
 benchmark:
 	python -m benchmark.run
 

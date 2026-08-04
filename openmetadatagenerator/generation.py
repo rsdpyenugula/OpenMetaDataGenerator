@@ -32,6 +32,21 @@ from .context.embedding import EmbeddingIndex, cosine
 from .llm.base import LLMBackend
 from .model import GenerationResult, Table
 
+# Confidence tags prefixed to every description (BOS = beginning-of-string tags):
+#   [AIG | High] — AI-generated with rich grounding (code / docs / lineage)
+#   [AIG | Low]  — AI-generated with little or no grounding (schema/names only)
+#   [Reviewed]   — human-reviewed; preserved as-is if already present
+_KNOWN_TAGS = ("[AIG | High]", "[AIG | Low]", "[Reviewed]")
+
+
+def _tag(text: str, high: bool) -> str:
+    """Prefix a confidence tag, unless the description already carries one."""
+    t = (text or "").strip()
+    if not t or t.startswith(_KNOWN_TAGS):
+        return t
+    return f"{'[AIG | High]' if high else '[AIG | Low]'}  {t}"
+
+
 _SYSTEM = (
     "You are a senior data engineer writing precise, factual data-catalog "
     "descriptions. Ground every statement in the provided context. Do not invent "
@@ -175,7 +190,24 @@ class Generator:
             if yielded == 0:                         # a strategy that stops helping is done
                 excluded.add(strategy)
 
+        # --- confidence tagging (last, so it never pollutes similarity scoring) ---
+        if self.cfg.tag_confidence:
+            self._apply_tags(tables)
+
         return self._results(tables)
+
+    def _apply_tags(self, tables: list[Table]) -> None:
+        """Prefix each description with a High/Low confidence tag based on how well the
+        object was grounded. High = had code/doc context, table lineage, or column
+        lineage; Low = schema and column names only."""
+        for t in tables:
+            table_grounded = bool(t.code_context or t.doc_context or t.upstreams)
+            if t.generated_description:
+                t.generated_description = _tag(t.generated_description, table_grounded)
+            for c in t.columns:
+                if c.generated_description:
+                    c.generated_description = _tag(c.generated_description,
+                                                   bool(c.upstreams) or table_grounded)
 
     # ------------------------------------------------------------------ passes
     def _canonical_prepass(self, tables: list[Table]) -> None:

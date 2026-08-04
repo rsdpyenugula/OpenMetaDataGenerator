@@ -1,0 +1,37 @@
+{
+  "provider": "mock",
+  "model": "(default)",
+  "benchmark": "sakila",
+  "n_entities": 5,
+  "seed": 7,
+  "ablations": {
+    "full": {
+      "coverage": 1.0,
+      "accuracy": 0.3436,
+      "faithfulness": 0.1616,
+      "exact_grain": 1.0,
+      "n": 96
+    },
+    "no-lineage": {
+      "coverage": 1.0,
+      "accuracy": 0.3092,
+      "faithfulness": 0.1566,
+      "exact_grain": 1.0,
+      "n": 96
+    },
+    "no-context": {
+      "coverage": 1.0,
+      "accuracy": 0.2791,
+      "faithfulness": 0.1389,
+      "exact_grain": 0.0,
+      "n": 96
+    },
+    "schema-only": {
+      "coverage": 1.0,
+      "accuracy": 0.245,
+      "faithfulness": 0.1333,
+      "exact_grain": 0.0,
+      "n": 96
+    }
+  }
+}

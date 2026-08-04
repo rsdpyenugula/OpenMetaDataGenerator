@@ -169,6 +169,14 @@ terminates when targets are met, no strategy yields further change, or an iterat
 reached---so the process is agentic but \emph{bounded and auditable} (we log the chosen
 strategy and measured state each iteration).
 
+\paragraph{Confidence tagging.} Every emitted description is prefixed with a
+beginning-of-string confidence tag---\texttt{[AIG\,|\,High]} when the object was grounded
+in code, documentation, or lineage; \texttt{[AIG\,|\,Low]} when only schema and column
+names were available; \texttt{[Reviewed]} is preserved when a human has edited a
+description. The tag travels with the description into the catalog so consumers see a
+provenance-aware confidence signal and human review can be prioritized on the low-confidence
+tail. Tags are applied last, after scoring, so they never distort the accuracy metric.
+
 \begin{algorithm}[t]
 \caption{OMDG: canonicalize-first, lineage-aware, controlled agentic generation}\label{alg:main}
 \begin{algorithmic}[1]
@@ -214,19 +222,21 @@ ablated by severing $U(\cdot)$ before generation.
 (mean cosine of output vs.\ gold), \emph{faithfulness} (mean cosine of output vs.\
 context), and \emph{grain recovery} (fraction of table descriptions that recover the
 correct ``one row per \ldots'' phrase).
-\paragraph{Real-schema benchmark (TPC-H).} To complement the synthetic setting with
-external validity, we additionally evaluate on the public TPC-H schema (8 tables), whose
-names, types, and foreign-key relationships we did not author. Foreign keys are read as
-lineage edges, yielding the dependency DAG
-\texttt{region}$\to$\texttt{nation}$\to$\{\texttt{supplier},\texttt{customer}\}$\to$\{\texttt{orders},
-\texttt{partsupp}\}$\to$\texttt{lineitem}; gold descriptions are paraphrased from the
-public specification and documentation context is limited to a partial grain hint to
-avoid trivially leaking the target.
+\paragraph{Real-schema benchmarks (TPC-H, Sakila).} To complement the synthetic setting
+with external validity, we evaluate on two public schemas whose names, types, and
+foreign-key relationships we did not author. \textbf{TPC-H} (8 tables) yields the DAG
+\texttt{region}$\to$\texttt{nation}$\to$\{\texttt{supplier},\texttt{customer}\}$\to$\ldots$\to$\texttt{lineitem}.
+\textbf{Sakila} (15 tables) is deeper and messier: it contains a \texttt{store}$\leftrightarrow$\texttt{staff}
+cycle (exercising cycle handling) and a \texttt{last\_update} column present in \emph{every}
+table (exercising canonicalize-first, which describes it once and seeds all 15 occurrences).
+Foreign keys are read as lineage edges; gold descriptions are paraphrased from each schema's
+public documentation, and documentation context is withheld or limited so grounding must
+come from schema and lineage rather than a leaked target.
 
-\paragraph{Results.} Tables~\ref{tab:main} and~\ref{tab:tpch} report the four
-configurations on both benchmarks. External context improves semantic accuracy and is
-\emph{decisive} for grain recovery, which is near-zero without it on both benchmarks
-($0.00\to0.60$ synthetic; $0.00\to1.00$ TPC-H). The ordering
+\paragraph{Results.} Tables~\ref{tab:main},~\ref{tab:tpch}, and~\ref{tab:sakila} report the
+four configurations on all three benchmarks. External context improves semantic accuracy and
+is \emph{decisive} for grain recovery, which is near-zero without it on every benchmark
+($0.00\to0.60$ synthetic; $0.00\to1.00$ TPC-H and Sakila). The ordering
 full~$\ge$~no-lineage~$\ge$~no-context~$\ge$~schema-only holds on accuracy.
 \emph{Note on the reference backend.} The deterministic backend used for reproducibility
 does not \emph{semantically} exploit inherited upstream descriptions---only a
@@ -252,6 +262,15 @@ recovery. Reproducible (deterministic backend).}
 read as lineage. Context yields large gains in accuracy and grain recovery on a schema we
 did not author.}
 \label{tab:tpch}
+\end{table}
+
+\begin{table}[t]
+\centering
+\input{results_table_sakila}
+\caption{Ablations on the public Sakila schema (15 tables, 96 objects), a deeper DAG with a
+cycle and a catalog-wide shared column. The same ordering holds; context drives accuracy and
+grain recovery.}
+\label{tab:sakila}
 \end{table}
 
 \subsection{Human-evaluation protocol}

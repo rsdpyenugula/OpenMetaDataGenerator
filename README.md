@@ -63,6 +63,47 @@ cfg = Config(); cfg.llm_provider = "openai"; cfg.code_path = "./sql"
 results = run_pipeline("snowflake", cfg, keyword="analytics")
 ```
 
+## Run the demo (no API keys)
+
+See the whole agentic pipeline work on a **real open-source schema (Sakila**, 15 tables)
+in one command:
+
+```bash
+make demo          # or: python examples/agentic_demo.py
+```
+
+It exercises every mechanism — canonicalize-first, lineage waves (incl. a store↔staff
+cycle), the controlled agentic loop, and `[AIG | High]`/`[AIG | Low]` confidence tags —
+then writes a CSV. Abridged output:
+
+```
+[1] canonicalize-first: 3 recurring concept(s) described once:
+      'last_update' -> 15 occurrences across 15 tables
+
+[2] lineage-aware waves (from foreign keys, upstream-first):
+      wave 1: actor, category, country, language
+      ...
+      wave 4: customer, inventory, payment, rental, staff, store
+
+[3] controlled agentic decision trace (measured vs. targets each iteration):
+      strategy   coverage  accuracy  cand(inh/sib/rew)
+      inherit        62%      ...     20/11/65     <- fills FK columns from upstream PKs
+      sibling        88%      ...     0/3/86       <- fills obscure cols from siblings
+      rework        100%      ...     0/0/96
+      stop          100%      ...     0/0/96
+
+[4] sample descriptions with confidence tags + grounding provenance:
+      • sakila.public.country
+          [AIG | Low]  ...            [NO CONTEXT: schema + column names only]
+      • sakila.public.film
+          [AIG | High] ...            [INHERITED-ONLY: 1 upstream(s)]
+
+[5] wrote 96 rows -> outputs/agentic_demo.csv   (column coverage 81/81 = 100%)
+```
+
+Coverage climbs 62% → 88% → 100% as the controller picks `inherit` then `sibling`.
+Swap the demo backend for `get_backend("anthropic")` (etc.) to run it with a real LLM.
+
 ## Reproduce the benchmark
 
 A synthetic, fully-labelled benchmark measures description quality against ground

@@ -55,4 +55,8 @@ class Config:
     code_path: str = field(default_factory=lambda: os.environ.get("OMDG_CODE_PATH", ""))
     doc_path: str = field(default_factory=lambda: os.environ.get("OMDG_DOC_PATH", ""))
     output_csv: str = field(default_factory=lambda: os.environ.get("OMDG_OUTPUT_CSV", "descriptions.csv"))
+    # Local knowledge store (DuckDB) + retrieval index.
+    db_path: str = field(default_factory=lambda: os.environ.get("OMDG_DB_PATH", ".cache/knowledge.duckdb"))
+    persist: bool = field(default_factory=lambda: os.environ.get("OMDG_PERSIST", "0") == "1")
+    use_hnsw: bool = field(default_factory=lambda: os.environ.get("OMDG_USE_HNSW", "1") == "1")
     generation: GenerationConfig = field(default_factory=GenerationConfig)

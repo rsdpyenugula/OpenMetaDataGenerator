@@ -18,9 +18,17 @@ The system is source- and model-agnostic:
 | Layer | Pluggable implementations |
 |-------|---------------------------|
 | **Metadata source** | DataHub Core (GraphQL), Databricks (Unity Catalog `information_schema`), Snowflake (`INFORMATION_SCHEMA`) |
+| **Local store** | DuckDB (`kb_tables` / `kb_columns` / `kb_embed_index`) — persists metadata, lineage, descriptions, and embeddings for incremental runs |
+| **RAG retrieval** | local embeddings (sentence-transformers) + **HNSW** index (`hnswlib`), persisted in DuckDB; lexical fallback with no model |
 | **Context** | path to code repository, path to documentation corpus |
-| **LLM backend** | OpenAI, Anthropic, AWS Bedrock, Google Vertex, Azure OpenAI |
+| **LLM backend** | OpenAI, Anthropic, AWS Bedrock, Google Vertex, Azure OpenAI, Gemini |
 | **Output** | tidy CSV (one row per described object) |
+
+The data flow mirrors a production catalog-documentation loop:
+
+```
+source (pull) → DuckDB (store + HNSW RAG index) → LLM (agentic gen) → CSV/catalog (write-back)
+```
 
 ## Method in one paragraph
 

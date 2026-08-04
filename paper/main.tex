@@ -199,16 +199,24 @@ tail. Tags are applied last, after scoring, so they never distort the accuracy m
 \end{algorithm}
 
 \section{System}\label{sec:system}
-OMDG is organized around three pluggable interfaces (Figure omitted for space): a
-\textbf{MetadataSource} (DataHub via GraphQL; Databricks and Snowflake via
-\texttt{information\_schema}), \textbf{ContextProvider}s (a code path and a document path,
-each backed by embedding retrieval), and an \textbf{LLMBackend} (OpenAI, Anthropic, AWS
-Bedrock, Google Vertex, Azure OpenAI behind one interface). The pipeline pulls metadata,
-attaches context, runs the generator, and writes a tidy CSV with one row per described
-object: \texttt{(object\_type, object\_name, parent\_table, context, output,
-grounding\_notes, similarity)}. Pairing each output with the exact context it saw makes
-the export directly consumable by an external LLM-judge / faithfulness
-pipeline~\citep{es2024ragas}.
+OMDG is organized around pluggable interfaces: a \textbf{MetadataSource} (DataHub via
+GraphQL; Databricks and Snowflake via \texttt{information\_schema}), \textbf{Context}
+providers (a code path and a document path), and an \textbf{LLMBackend} (OpenAI,
+Anthropic, AWS Bedrock, Google Vertex, Azure OpenAI, and the Gemini API behind one
+interface). Between the source and the generator sits a \textbf{local DuckDB store}
+(relations \texttt{kb\_tables}, \texttt{kb\_columns}, \texttt{kb\_embed\_index}) that
+persists pulled metadata, table- and column-level lineage, the exact \texttt{prompt\_context}
+and per-item similarity of each description, and the embedding vectors of the RAG corpus.
+Retrieval is a persistent, incremental \textbf{HNSW} index: context chunks (code, docs,
+view SQL) are embedded once with a local sentence encoder, stamped with the model name,
+and re-embedded only when their source changes; a model change wipes and rebuilds the
+index. Persisting to DuckDB makes runs incremental (re-document only what changed) and the
+whole pipeline auditable end-to-end. The data flow is
+\texttt{source}$\to$\texttt{DuckDB (store + HNSW RAG)}$\to$\texttt{LLM (agentic gen)}$\to$\texttt{write-back}.
+The final export is a tidy CSV with one row per described object
+\texttt{(object\_type, object\_name, parent\_table, context, output, grounding\_notes,
+similarity)}; pairing each output with the exact context it saw makes it directly
+consumable by an external LLM-judge / faithfulness pipeline~\citep{es2024ragas}.
 
 \section{Experiments}
 \paragraph{Benchmark.} Real catalogs cannot supply ground truth, so we generate a

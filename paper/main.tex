@@ -14,6 +14,7 @@
 \usepackage[margin=1in]{geometry}
 \usepackage{xcolor}
 \hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+\emergencystretch=1em  % absorb tight lines to avoid overfull \hbox warnings
 
 \title{\textbf{OpenMetaDataGenerator: Context-Grounded, Lineage-Aware\\
 Automatic Description Generation for Data-Catalog Metadata}}
@@ -260,9 +261,10 @@ context), and \emph{grain recovery} (fraction of table descriptions that recover
 correct ``one row per \ldots'' phrase).
 \paragraph{Real-schema benchmarks (TPC-H, Sakila).} To complement the synthetic setting
 with external validity, we evaluate on two public schemas whose names, types, and
-foreign-key relationships we did not author. \textbf{TPC-H} (8 tables) yields the DAG
-\texttt{region}$\to$\texttt{nation}$\to$\{\texttt{supplier},\texttt{customer}\}$\to$\ldots$\to$\texttt{lineitem}.
-\textbf{Sakila} (15 tables) is deeper and messier: it contains a \texttt{store}$\leftrightarrow$\texttt{staff}
+foreign-key relationships we did not author. \textbf{TPC-H} (8 tables) forms a dependency
+DAG rooted at \texttt{region} and \texttt{nation} and flowing through \texttt{supplier} and
+\texttt{customer} down to \texttt{orders} and \texttt{lineitem}.
+\textbf{Sakila} (15 tables) is deeper and messier: it contains a \texttt{store}--\texttt{staff}
 cycle (exercising cycle handling) and a \texttt{last\_update} column present in \emph{every}
 table (exercising canonicalize-first, which describes it once and seeds all 15 occurrences).
 Foreign keys are read as lineage edges; gold descriptions are paraphrased from each schema's
@@ -284,6 +286,7 @@ real-LLM runs, which the released harness reproduces via
 
 \begin{table}[t]
 \centering
+\small
 \input{results_table}
 \caption{Ablations on the synthetic benchmark (5 concepts, 15 tables, 80 objects).
 Higher is better. Context contributes over the schema-only baseline; lineage adds grain
@@ -293,6 +296,7 @@ recovery. Reproducible (deterministic backend).}
 
 \begin{table}[t]
 \centering
+\small
 \input{results_table_tpch}
 \caption{Ablations on the public TPC-H schema (8 tables, 66 objects), with foreign keys
 read as lineage. Context yields large gains in accuracy and grain recovery on a schema we
@@ -302,6 +306,7 @@ did not author.}
 
 \begin{table}[t]
 \centering
+\small
 \input{results_table_sakila}
 \caption{Ablations on the public Sakila schema (15 tables, 96 objects), a deeper DAG with a
 cycle and a catalog-wide shared column. The same ordering holds; context drives accuracy and

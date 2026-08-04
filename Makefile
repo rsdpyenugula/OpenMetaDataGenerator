@@ -9,6 +9,9 @@ test:
 demo:
 	python examples/agentic_demo.py
 
+rag-demo:
+	python examples/rag_demo.py
+
 benchmark:
 	python -m benchmark.run
 

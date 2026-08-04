@@ -112,6 +112,14 @@ then writes a CSV. Abridged output:
 Coverage climbs 62% → 88% → 100% as the controller picks `inherit` then `sibling`.
 Swap the demo backend for `get_backend("anthropic")` (etc.) to run it with a real LLM.
 
+A second demo shows the **DuckDB + HNSW local RAG** retrieving a snippet into a table's prompt:
+
+```bash
+make rag-demo      # or: python examples/rag_demo.py
+```
+It indexes a sample code + docs corpus into `kb_embed_index`, retrieves the right chunk
+for a query table, and generates a description grounded in it (tagged `[AIG | High]`).
+
 ## Reproduce the benchmark
 
 A synthetic, fully-labelled benchmark measures description quality against ground

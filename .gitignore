@@ -21,3 +21,4 @@ paper/*.synctex.gz
 outputs/
 *.csv
 !benchmark/fixtures/*.csv
+paper/*.tar.gz

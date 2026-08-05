@@ -1,8 +1,16 @@
-% TMLR submission build (double-blind): compile with `tectonic main_tmlr.tex`.
-% Uses the official TMLR style; author block is anonymized by the style in
-% submission mode. Use \usepackage[accepted]{tmlr} for the camera-ready.
-\documentclass{article}
+% TMLR submission build (double-blind): compile with `tectonic main_tmlr.tex` (make paper-tmlr).
+% Follows the official TMLR template (github.com/JmlrOrg/tmlr-style-file).
+% The tmlr style HIDES the author block automatically in submission mode.
+% For the camera-ready, switch to \usepackage[accepted]{tmlr} and fill \month/\year/\openreview.
+\documentclass[10pt]{article} % For LaTeX2e
 \usepackage{tmlr}
+% If accepted, instead use the following line for the camera-ready submission:
+%\usepackage[accepted]{tmlr}
+% To de-anonymize and remove mentions to TMLR (e.g. for preprint servers):
+%\usepackage[preprint]{tmlr}
+
+\usepackage{hyperref}
+\usepackage{url}
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
 \usepackage{graphicx}
@@ -14,8 +22,14 @@
 
 \title{OpenMetaDataGenerator: Context-Grounded, Lineage-Aware Automatic Description Generation for Data-Catalog Metadata}
 
-\author{\name Anonymous authors \email \\
-\addr Paper under double-blind review}
+% Authors must not appear in the submitted version. They are hidden automatically
+% as long as the tmlr package is used without the [accepted] or [preprint] options.
+\author{\name Ravi Satya Durga Prasad Yenugula \email rsravi96@gmail.com \\
+      \addr Independent Researcher}
+
+\def\month{MM}  % Insert correct month for camera-ready version
+\def\year{YYYY} % Insert correct year for camera-ready version
+\def\openreview{\url{https://openreview.net/forum?id=XXXX}} % Insert correct link for camera-ready
 
 % Anonymized artifact pointer for double-blind review.
 \newcommand{\REPO}{an anonymized repository included as supplementary material}
@@ -23,4 +37,7 @@
 \begin{document}
 \maketitle
 \input{body}
+
+\bibliography{references}
+\bibliographystyle{tmlr}
 \end{document}

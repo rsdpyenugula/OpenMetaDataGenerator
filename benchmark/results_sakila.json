@@ -1,36 +1,36 @@
 {
   "provider": "gemini",
-  "model": "gemini-flash-latest",
+  "model": "gemini-3.1-pro-preview",
   "benchmark": "sakila",
   "n_entities": 5,
   "seed": 7,
   "ablations": {
     "full": {
       "coverage": 1.0,
-      "accuracy": 0.7582,
-      "faithfulness": 0.4024,
+      "accuracy": 0.7358,
+      "faithfulness": 0.39,
       "exact_grain": 0.0,
       "n": 96
     },
     "no-lineage": {
       "coverage": 1.0,
-      "accuracy": 0.7453,
-      "faithfulness": 0.4426,
-      "exact_grain": 0.3333,
+      "accuracy": 0.7188,
+      "faithfulness": 0.4518,
+      "exact_grain": 0.0,
       "n": 96
     },
     "no-context": {
       "coverage": 1.0,
-      "accuracy": 0.6762,
-      "faithfulness": 0.3741,
+      "accuracy": 0.6843,
+      "faithfulness": 0.3608,
       "exact_grain": 0.0,
       "n": 96
     },
     "schema-only": {
       "coverage": 1.0,
-      "accuracy": 0.7091,
-      "faithfulness": 0.4248,
-      "exact_grain": 0.0667,
+      "accuracy": 0.6632,
+      "faithfulness": 0.4066,
+      "exact_grain": 0.0,
       "n": 96
     }
   }

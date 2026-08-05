@@ -47,3 +47,10 @@ Data management / metadata systems; retrieval-augmented generation; LLM evaluati
 ## Prior dissemination
 An identical preprint is (to be) posted on arXiv (cs.DB); this is permitted under TMLR's
 policy on preprints.
+
+## Anonymized build (double-blind)
+TMLR review is double-blind. Submit the PDF built from `paper/main_tmlr.tex`
+(`make paper-tmlr`): it uses the official `tmlr.sty`, replaces the author block with
+"Anonymous authors", and swaps the GitHub URL for an anonymized-supplementary pointer via
+the `\REPO` macro. For the camera-ready, switch to `\usepackage[accepted]{tmlr}` and restore
+the real author block and repository URL.

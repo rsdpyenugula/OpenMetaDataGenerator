@@ -29,5 +29,8 @@ benchmark-llm-all:
 paper:
 	cd paper && (tectonic main.tex || (pdflatex main && bibtex main && pdflatex main && pdflatex main))
 
+paper-tmlr:
+	cd paper && tectonic main_tmlr.tex
+
 clean:
 	rm -rf build dist *.egg-info **/__pycache__ paper/*.aux paper/*.log paper/*.bbl paper/*.blg paper/*.out

@@ -1,36 +1,36 @@
 {
-  "provider": "mock",
-  "model": "(default)",
+  "provider": "gemini",
+  "model": "gemini-flash-latest",
   "benchmark": "synthetic",
   "n_entities": 5,
   "seed": 7,
   "ablations": {
     "full": {
       "coverage": 1.0,
-      "accuracy": 0.4696,
-      "faithfulness": 0.1475,
-      "exact_grain": 0.6,
+      "accuracy": 0.7172,
+      "faithfulness": 0.4025,
+      "exact_grain": 0.0,
       "n": 80
     },
     "no-lineage": {
       "coverage": 1.0,
-      "accuracy": 0.3901,
-      "faithfulness": 0.1448,
-      "exact_grain": 0.5333,
+      "accuracy": 0.7112,
+      "faithfulness": 0.4498,
+      "exact_grain": 0.2,
       "n": 80
     },
     "no-context": {
       "coverage": 1.0,
-      "accuracy": 0.4135,
-      "faithfulness": 0.1502,
-      "exact_grain": 0.0,
+      "accuracy": 0.727,
+      "faithfulness": 0.3944,
+      "exact_grain": 0.0667,
       "n": 80
     },
     "schema-only": {
       "coverage": 1.0,
-      "accuracy": 0.2821,
-      "faithfulness": 0.1544,
-      "exact_grain": 0.0,
+      "accuracy": 0.7118,
+      "faithfulness": 0.4253,
+      "exact_grain": 0.0667,
       "n": 80
     }
   }

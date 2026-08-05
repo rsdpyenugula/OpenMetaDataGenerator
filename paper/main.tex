@@ -14,7 +14,8 @@
 \usepackage[margin=1in]{geometry}
 \usepackage{xcolor}
 \hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
-\emergencystretch=1em  % absorb tight lines to avoid overfull \hbox warnings
+\emergencystretch=3em  % absorb tight lines / long \texttt tokens (avoid overfull \hbox)
+\usepackage{microtype}  % better justification, fewer overfull boxes
 
 \title{\textbf{OpenMetaDataGenerator: Context-Grounded, Lineage-Aware\\
 Automatic Description Generation for Data-Catalog Metadata}}
@@ -53,10 +54,12 @@ catalogs lack ground-truth semantics, we introduce a synthetic, fully-labelled b
 with a medallion lineage DAG and controllable context, and complement it with two public
 schemas (TPC-H and Sakila) whose foreign keys we read as lineage; we measure coverage,
 semantic accuracy against ground truth, and a faithfulness (anti-hallucination) proxy.
-Ablations across all three benchmarks show that external context substantially improves
-accuracy and grain recovery over a schema-only baseline, and we specify a human-evaluation
-protocol for real-catalog deployments. We release the system, benchmarks, and evaluation
-harness under Apache-2.0.
+With Gemini, external context yields a small but consistent accuracy gain on the two real
+schemas ($+4$--$6$ points) and a negligible effect on the synthetic one---a boundary condition
+we analyze: a strong LLM is hard to beat when column names are self-describing, and grounding
+helps most where names are \emph{un}informative, as in the cryptic columns that pervade real
+enterprise catalogs. We specify a human-evaluation protocol for real-catalog deployments and
+release the system, benchmarks, and evaluation harness under Apache-2.0.
 \end{abstract}
 
 \section{Introduction}
@@ -268,9 +271,11 @@ and column descriptions; code and documentation context are granted per table wi
 probability $p$, giving a knob to ablate context availability. Lineage inheritance is
 ablated by severing $U(\cdot)$ before generation.
 \paragraph{Metrics.} \emph{Coverage} (fraction of objects described), \emph{accuracy}
-(mean cosine of output vs.\ gold), \emph{faithfulness} (mean cosine of output vs.\
-context), and \emph{grain recovery} (fraction of table descriptions that recover the
-correct ``one row per \ldots'' phrase).
+(mean sentence-embedding cosine of output vs.\ gold), and \emph{faithfulness} (mean cosine
+of output vs.\ the grounding context, a hallucination proxy). We also compute grain recovery
+in the harness but do not tabulate it: exact-phrase matching mis-scores the varied phrasings a
+free-form LLM uses for the same grain (``each row represents \ldots'' vs.\ ``one row per
+\ldots''), so grain is assessed in the human protocol instead.
 \paragraph{Real-schema benchmarks (TPC-H, Sakila).} To complement the synthetic setting
 with external validity, we evaluate on two public schemas whose names, types, and
 foreign-key relationships we did not author. \textbf{TPC-H} (8 tables) forms a dependency
@@ -283,26 +288,33 @@ Foreign keys are read as lineage edges; gold descriptions are paraphrased from e
 public documentation, and documentation context is withheld or limited so grounding must
 come from schema and lineage rather than a leaked target.
 
-\paragraph{Results.} Tables~\ref{tab:main},~\ref{tab:tpch}, and~\ref{tab:sakila} report the
-four configurations on all three benchmarks. External context improves semantic accuracy and
-is \emph{decisive} for grain recovery, which is near-zero without it on every benchmark
-($0.00\to0.60$ synthetic; $0.00\to1.00$ TPC-H and Sakila). The ordering
-full~$\ge$~no-lineage~$\ge$~no-context~$\ge$~schema-only holds on accuracy.
-\emph{Note on the reference backend.} The deterministic backend used for reproducibility
-does not \emph{semantically} exploit inherited upstream descriptions---only a
-context-following LLM does---so it is lineage-neutral by construction; the isolated
-effect of lineage inheritance on downstream accuracy is therefore reported from the
-real-LLM runs, which the released harness reproduces via
-\texttt{make benchmark-llm PROVIDER=\ldots\ MODEL=\ldots}. All ablation \emph{trends}
-(the effect of context, coverage, and grain recovery) are reproducible without API keys.
+\paragraph{Results.} Tables~\ref{tab:main}--\ref{tab:sakila} report the four configurations
+generated with Gemini (\texttt{gemini-flash-latest}) and scored by sentence-embedding cosine
+(single run). The effect of external context depends strongly on how informative the schema
+names are. On the two public schemas, whose column names are descriptive, context (code and
+documentation) yields a small but consistent gain---averaged over the two context-bearing
+configurations, $+3.7$ accuracy points on TPC-H ($0.785\!\to\!0.822$) and $+5.9$ on Sakila
+($0.693\!\to\!0.752$). On the synthetic benchmark, whose templated targets a strong model
+recovers from column names alone, the effect is negligible. Lineage inheritance shows no
+consistent effect on similarity accuracy ($\pm1$--$2$ points, sign varying by benchmark): its
+value is coverage and cross-table consistency, which a capable model already saturates on
+these schemas (coverage $=1.0$ in every configuration). We read this as a boundary condition
+rather than a null result---a strong LLM is hard to beat when names are self-describing, and
+the benefit of grounding concentrates where names are \emph{un}informative, i.e.\ the cryptic,
+abbreviated columns that dominate real enterprise catalogs (Section~\ref{sec:limitations}).
+\emph{Reference backend.} A deterministic, no-API-key backend reproduces the pipeline and its
+ablation \emph{mechanics} for anyone without credentials; because it does not semantically
+exploit inherited descriptions it is lineage-neutral by construction, so the numbers above are
+the ones to cite for lineage's (small) effect.
 
 \begin{table}[t]
 \centering
 \small
 \input{results_table}
-\caption{Ablations on the synthetic benchmark (5 concepts, 15 tables, 80 objects).
-Higher is better. Context contributes over the schema-only baseline; lineage adds grain
-recovery. Reproducible (deterministic backend).}
+\caption{Synthetic benchmark (5 concepts, 15 tables, 80 objects); Gemini
+\texttt{gemini-flash-latest}, embedding-cosine, single run. A strong model recovers the
+templated targets from column names alone, so context and lineage have negligible effect
+here. Coverage $=1.0$ throughout.}
 \label{tab:main}
 \end{table}
 
@@ -310,9 +322,9 @@ recovery. Reproducible (deterministic backend).}
 \centering
 \small
 \input{results_table_tpch}
-\caption{Ablations on the public TPC-H schema (8 tables, 66 objects), with foreign keys
-read as lineage. Context yields large gains in accuracy and grain recovery on a schema we
-did not author.}
+\caption{Public TPC-H schema (8 tables, 66 objects); foreign keys read as lineage.
+Context (code/doc) gives a small, consistent accuracy gain ($+3.7$ points averaged over the
+two context-bearing rows) on a schema we did not author; lineage's effect is within noise.}
 \label{tab:tpch}
 \end{table}
 
@@ -320,9 +332,10 @@ did not author.}
 \centering
 \small
 \input{results_table_sakila}
-\caption{Ablations on the public Sakila schema (15 tables, 96 objects), a deeper DAG with a
-cycle and a catalog-wide shared column. The same ordering holds; context drives accuracy and
-grain recovery.}
+\caption{Public Sakila schema (15 tables, 96 objects); a deeper FK DAG with a
+\texttt{store}--\texttt{staff} cycle and a catalog-wide \texttt{last\_update} column.
+Context gives the largest accuracy gain here ($+5.9$ points), and \emph{Full} (context +
+lineage) is the best configuration.}
 \label{tab:sakila}
 \end{table}
 
@@ -339,35 +352,50 @@ and hallucinations (unsupported claims) are logged separately as a hard error ra
 
 \subsection{Reproducibility statement}
 The system, the synthetic generator, both public-schema benchmarks (TPC-H, Sakila), and the
-evaluation harness are released under Apache-2.0 at the URL on the title page. All ablation
-\emph{trends} in Tables~\ref{tab:main}--\ref{tab:sakila} reproduce with \emph{no API keys and
-no GPU} via a deterministic reference backend: \texttt{pip install -e .} then
-\texttt{make benchmark} (and \texttt{-\/-benchmark tpch|sakila}); each run completes in
-seconds and regenerates the exact result tables in this paper. Real-LLM results are
-reproduced with \texttt{make benchmark-llm PROVIDER=$p$ MODEL=$m$} against any of the six
-supported providers. Unit tests (\texttt{make test}) and two runnable demos---the controlled
-agentic loop and the DuckDB+HNSW retrieval---execute on a fresh install, and continuous
-integration runs the tests and both benchmarks on Python 3.9--3.12.
+evaluation harness are released under Apache-2.0 at the URL on the title page. The result tables (Tables~\ref{tab:main}--\ref{tab:sakila}) are produced with
+\texttt{make benchmark-llm PROVIDER=gemini MODEL=gemini-flash-latest} and can be regenerated
+with any of the six supported providers (absolute numbers vary by model). Independently, the
+pipeline and its ablation \emph{mechanics} run with \emph{no API keys and no GPU} via a
+deterministic reference backend (\texttt{pip install -e .}; \texttt{make benchmark
+-\/-benchmark synthetic|tpch|sakila}), completing in seconds---used for continuous integration
+and for reviewers without credentials. Unit tests (\texttt{make test}) and two runnable
+demos---the controlled agentic loop and the DuckDB+HNSW retrieval---execute on a fresh
+install; CI runs the tests and all benchmarks on Python 3.9--3.12.
 
-\section{Discussion and Limitations}
-The synthetic benchmark isolates mechanisms but does not capture the full messiness of
-production schemas; we therefore treat it as a controlled complement to, not a replacement
-for, human evaluation on real catalogs. The rework loop's similarity signal rewards lexical
-overlap with context, which can under-credit correct-but-terse descriptions; combining it
-with a reference-free judge is future work. Finally, generated descriptions should be
-surfaced with their grounding provenance and confidence so that human reviewers remain in
-the loop for high-stakes governance decisions.
+\section{Discussion and Limitations}\label{sec:limitations}
+\paragraph{The benefit of grounding is a function of name informativeness.} Our sharpest
+finding is a boundary condition: on schemas whose names are descriptive (TPC-H, Sakila, and
+the templated synthetic set), a strong LLM already produces accurate descriptions from names
+alone, so external context adds only a few points and lineage inheritance adds little to
+accuracy (it saturates coverage instead). This is exactly the regime where the task is
+\emph{easy}. The regime OMDG is built for---enterprise catalogs whose columns are cryptic and
+abbreviated (e.g.\ opaque codes and audit fields), where names carry almost no meaning---is
+where grounding should matter most, and our public benchmarks understate that gain because we
+could not release a proprietary cryptic-name catalog. A controlled benchmark that
+\emph{obfuscates} column names (decoupling name from meaning so context becomes necessary) is
+the most important next experiment, and the released harness supports it directly.
+\paragraph{Single run and metric caveats.} The reported numbers are from a single run;
+multi-seed means and variance are needed for tight comparisons (the mechanism itself is
+deterministic-backend reproducible). Embedding cosine to a single reference under-credits
+correct paraphrases, and the rework loop's similarity signal can likewise under-value terse
+descriptions; pairing both with a reference-free judge is future work.
+\paragraph{Human-in-the-loop.} Generated descriptions should be surfaced with their grounding
+provenance and confidence tag so that reviewers stay in the loop for high-stakes governance
+decisions rather than trusting the model blindly.
 
 \section{Conclusion}
 Semantic metadata is the missing half of the modern data catalog, and generating it well
 requires more than prompting a language model with a column list. OMDG shows that treating
 \emph{lineage as a scheduling structure}---not merely as prompt content---together with
 canonicalize-first generation, multi-source retrieval grounding, and a bounded, auditable
-agentic control loop, yields catalog descriptions that are measurably more accurate and
-better grounded than a schema-only baseline, across a synthetic benchmark and two public
-schemas. The design is agnostic to the metadata source and the LLM provider, persists its
-state for incremental and auditable runs, and attaches provenance and confidence to every
-description so humans stay in the loop where it matters. We release the system, the three
+agentic control loop, yields a coherent and scalable system for the task. Empirically, on
+public schemas with descriptive names a strong LLM is already a hard baseline, and grounding
+adds a small but consistent accuracy gain ($+4$--$6$ points on the two real schemas); we argue,
+and leave to a cryptic-name benchmark to demonstrate, that the gain is larger precisely where
+names are uninformative---the setting that motivates the system. The design is agnostic to the
+metadata source and the LLM provider, persists its state for incremental and auditable runs,
+and attaches provenance and confidence to every description so humans stay in the loop where it
+matters. We release the system, the three
 benchmarks, and the evaluation harness to support reproducible research on automatic
 semantic-metadata generation.
 

@@ -89,6 +89,20 @@ def test_judge_gates_replacement():
     assert id(obj) in approved
 
 
+def test_parse_handles_llm_formatting_variety():
+    from openmetadatagenerator.generation import _parse
+    want = ("T desc", {"a": "A desc"})
+    for raw in (
+        '{"table":"T desc","columns":{"a":"A desc"}}',                 # bare
+        '```json\n{"table":"T desc","columns":{"a":"A desc"}}\n```',    # fenced
+        '```json\n{"table":"T desc","columns":{"a":"A desc"}}',         # unclosed fence
+        'Reasoning...\n{"table":"T desc","columns":{"a":"A desc"}}',    # thinking preamble
+    ):
+        assert _parse(raw) == want
+    # a lone fence marker must never leak through as a description
+    assert _parse("```json")[0] == ""
+
+
 def test_csv_export(tmp_path):
     tables, _ = build_benchmark(n_entities=2, seed=3)
     out = tmp_path / "d.csv"

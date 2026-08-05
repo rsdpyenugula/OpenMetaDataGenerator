@@ -113,15 +113,32 @@ def _prompt(t: Table, upstream_desc: dict[str, str], max_chars: int) -> str:
 
 
 def _parse(raw: str) -> tuple[str, dict[str, str]]:
-    raw = raw.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```")[1].lstrip("json").strip() if "```" in raw[3:] else raw[3:]
-    try:
-        obj = json.loads(raw[raw.find("{"): raw.rfind("}") + 1])
-        return (obj.get("table") or "").strip(), {
-            k: (v or "").strip() for k, v in (obj.get("columns") or {}).items()}
-    except Exception:
-        return raw.split("\n")[0].strip(), {}
+    """Robustly extract (table_desc, {col: desc}) from a model response.
+
+    Tolerates the formatting variety real LLMs produce: bare JSON, JSON in a
+    ```json ... ``` fence (open or unclosed), and JSON preceded by reasoning/preamble
+    text (e.g. from a thinking model). Falls back to the first meaningful line only when
+    no JSON object can be recovered -- never to a fence marker like ``json``.
+    """
+    raw = (raw or "").strip()
+    # Strip a leading/trailing markdown code fence if present.
+    raw = re.sub(r"^```[a-zA-Z]*\s*", "", raw)
+    raw = re.sub(r"\s*```$", "", raw).strip()
+    # Recover the outermost JSON object anywhere in the text.
+    start, end = raw.find("{"), raw.rfind("}")
+    if start != -1 and end > start:
+        try:
+            obj = json.loads(raw[start:end + 1])
+            return (obj.get("table") or "").strip(), {
+                k: (v or "").strip() for k, v in (obj.get("columns") or {}).items()}
+        except Exception:
+            pass
+    # Fallback: first real line (skip fence markers / bare "json").
+    for line in raw.splitlines():
+        line = line.strip().strip("`").strip()
+        if line and line.lower() not in ("json", "```json"):
+            return line, {}
+    return "", {}
 
 
 class Generator:

@@ -19,7 +19,7 @@ _DEFAULT_MODELS = {
     "bedrock": "anthropic.claude-3-5-sonnet-20240620-v1:0",
     "vertex": "gemini-1.5-pro",
     "azure": "gpt-4o-mini",
-    "gemini": "gemini-2.0-flash",
+    "gemini": "gemini-2.5-flash",
 }
 
 

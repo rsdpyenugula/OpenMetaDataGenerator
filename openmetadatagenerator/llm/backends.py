@@ -105,6 +105,10 @@ class GeminiBackend(LLMBackend):
     name = "gemini"
 
     def __init__(self, model: str = "", **kw):
+        # Gemini "flash/pro" are thinking models: hidden reasoning tokens count against
+        # the output budget, so a small max_tokens truncates the JSON. Give generous
+        # headroom unless the caller overrides.
+        kw.setdefault("max_tokens", 8192)
         super().__init__(model or _DEFAULT_MODELS["gemini"], **kw)
         from google import genai
         self._genai = genai

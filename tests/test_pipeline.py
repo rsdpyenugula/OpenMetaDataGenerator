@@ -109,3 +109,20 @@ def test_csv_export(tmp_path):
     n = write_csv(_gen(tables), str(out))
     assert out.exists() and n > 0
     assert out.read_text().splitlines()[0].startswith("object_type,object_name")
+
+
+def test_cryptic_benchmark_builds_and_runs():
+    from benchmark.cryptic import build_cryptic
+    tables, gold = build_cryptic(with_context=True)
+    assert len(tables) == 15
+    # names are obfuscated; gold keys match the obfuscated fqns
+    assert all(t.name.startswith("t") for t in tables)
+    assert all(k.startswith("warehouse.public.t") for k in gold.table_desc)
+    # context contains the rename mapping, never the gold text
+    ctx = next(t.code_context for t in tables if t.code_context)
+    assert " AS c" in ctx
+    assert not any(gd in ctx for gd in gold.table_desc.values())
+    # FK lineage preserved under renaming
+    assert any(c.upstreams for t in tables for c in t.columns)
+    m = evaluate(_gen(tables), gold, len(tables) + sum(len(t.columns) for t in tables))
+    assert m.coverage == 1.0

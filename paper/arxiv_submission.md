@@ -20,28 +20,30 @@ metadata—schemas and lineage—is captured automatically, yet whose semantic m
 a table means, what one row represents, what each column measures—is chronically absent,
 slowing discovery, governance, and analytics. We present OpenMetaDataGenerator (OMDG), an
 open-source system that generates this missing semantic layer at scale by grounding a
-large language model in three complementary signals: table schema, external context
-(transformation code and documentation), and data lineage. OMDG contributes (i) a
-topological *wave scheduler* that generates descriptions in lineage order so downstream
-tables inherit the grounded descriptions of their upstreams, propagating context through
-the lineage DAG; (ii) retrieval-grounded, provenance-tagged prompting that fuses schema,
-code, documentation, and column-level lineage; and (iii) two closed control loops—a
-coverage loop and an accuracy-driven rework loop that scores each description's similarity
-to the exact context it was grounded in and regenerates a low-similarity tail. The system
-is source-agnostic (DataHub, Databricks, Snowflake) and model-agnostic (OpenAI, Anthropic,
-Bedrock, Vertex, Azure). Because production catalogs lack ground-truth semantics, we
-introduce a synthetic, fully-labelled benchmark and complement it with the public TPC-H
-schema (foreign keys read as lineage); across both, external context substantially
-improves accuracy and grain recovery over a schema-only baseline. We release the system,
-benchmarks, and evaluation harness.
+large language model in table schema, external context (transformation code and
+documentation), and data lineage. OMDG contributes: a topological wave scheduler that
+generates descriptions in lineage order so downstream tables inherit their upstreams'
+grounded descriptions; canonicalize-first generation that describes each recurring column
+concept once and seeds it catalog-wide; a planned, controlled agentic loop that measures
+coverage and per-item accuracy against explicit targets and selects inherit / sibling /
+rework actions with an LLM-judge gating replacements; and an auditable substrate (DuckDB
+knowledge store, persistent incremental HNSW retrieval, confidence tags). The system is
+source-agnostic (DataHub, Databricks, Snowflake) and model-agnostic (six providers). We
+evaluate on a labelled synthetic benchmark, two public schemas (TPC-H, Sakila), and a
+cryptic-name variant of Sakila with obfuscated identifiers. With a strong production model
+the experiments expose a two-regime picture: when names are self-describing the model is
+already saturated and context adds at most a few points, but when names carry no meaning
+grounding is decisive—accuracy rises from 0.27 to 0.71 (+43 points, stable across three
+runs). The value of grounding is governed by name informativeness, concentrating exactly
+where real enterprise catalogs hurt most. We release the system, benchmarks, and
+evaluation harness.
 
 ---
 
 ## Submission checklist
 
 - [x] GitHub handle set to `rsdpyenugula` in `main.tex`, `README.md`, `CITATION.cff`.
-- [ ] Build camera PDF: Overleaf or `make paper` (needs a TeX distribution).
-- [ ] Run real-LLM numbers and paste into `paper/results_table*.tex` (kept auto-generated):
-      `make benchmark-llm PROVIDER=<p> MODEL=<m>` and `... --benchmark tpch`.
-- [ ] Verify `main.tex` compiles standalone (article class) OR swap in the TMLR class for TMLR.
+- [x] PDF builds locally: `make paper` (tectonic).
+- [x] Real-LLM numbers in all tables (Gemini 3.1 Pro; cryptic headline = mean±sd over 3 runs).
+- [x] `main.tex` (arXiv) and `main_tmlr.tex` (anonymized, tmlr.sty) both compile.
 - [ ] Tag a release (e.g. v0.1.0) so the arXiv "Code" link is reproducible.

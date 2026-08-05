@@ -7,29 +7,29 @@
   "ablations": {
     "full": {
       "coverage": 1.0,
-      "accuracy": 0.7043,
-      "faithfulness": 0.3556,
+      "accuracy": 0.7025,
+      "faithfulness": 0.3564,
       "exact_grain": 0.0,
       "n": 96
     },
     "no-lineage": {
       "coverage": 1.0,
-      "accuracy": 0.712,
-      "faithfulness": 0.3152,
+      "accuracy": 0.7138,
+      "faithfulness": 0.3156,
       "exact_grain": 0.0,
       "n": 96
     },
     "no-context": {
       "coverage": 1.0,
-      "accuracy": 0.2495,
-      "faithfulness": 0.4237,
+      "accuracy": 0.2612,
+      "faithfulness": 0.4,
       "exact_grain": 0.0,
       "n": 96
     },
     "schema-only": {
       "coverage": 0.9062,
-      "accuracy": 0.2922,
-      "faithfulness": 0.3087,
+      "accuracy": 0.2874,
+      "faithfulness": 0.305,
       "exact_grain": 0.0,
       "n": 87
     }

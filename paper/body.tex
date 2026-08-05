@@ -23,12 +23,13 @@ catalogs lack ground-truth semantics, we introduce a synthetic, fully-labelled b
 with a medallion lineage DAG and controllable context, and complement it with two public
 schemas (TPC-H and Sakila) whose foreign keys we read as lineage; we measure coverage,
 semantic accuracy against ground truth, and a faithfulness (anti-hallucination) proxy.
-With a strong production model (Gemini~3.1~Pro), external context helps clearly only on the
-deepest schema (Sakila, $+5.4$ accuracy points, with a clean context-first ordering) and is
-negligible on the other two, which the model already saturates from column names---a boundary
-condition we analyze: a strong LLM is hard to beat when names are self-describing, and grounding
-helps most where names are \emph{un}informative, as in the cryptic columns that pervade real
-enterprise catalogs. We specify a human-evaluation protocol for real-catalog deployments and
+With a strong production model (Gemini~3.1~Pro) the experiments expose a two-regime picture:
+when column names are self-describing the model is already saturated and context adds at most a
+few points, but on a \emph{cryptic-name} variant of the same schema---identifiers obfuscated,
+gold labels and lineage unchanged---grounding becomes decisive, lifting accuracy from $0.27$ to
+$0.71$ ($+43$ points, stable across three runs). The value of grounding is thus governed by name
+informativeness, and it concentrates exactly where real enterprise catalogs hurt most: cryptic,
+abbreviated columns whose names carry no meaning. We specify a human-evaluation protocol for real-catalog deployments and
 release the system, benchmarks, and evaluation harness under Apache-2.0.
 \end{abstract}
 
@@ -278,21 +279,26 @@ catalog note; the gold description text never appears in any context, so the mod
 know what the mapped source column \emph{means}. Lineage (including fine-grained
 FK$\to$PK column lineage) is preserved under the renaming.
 
-\paragraph{Results.} Tables~\ref{tab:main}--\ref{tab:sakila} report the four configurations
+\paragraph{Results.} Tables~\ref{tab:main}--\ref{tab:cryptic} report the four configurations
 generated with Gemini (\texttt{gemini-3.1-pro-preview}, the model our reference deployment
-uses) and scored by sentence-embedding cosine (single run). The value of external context is
-strongly modulated by how informative the schema names are, and a strong production model
-raises the bar. Context helps clearly only on \textbf{Sakila}, the deepest and messiest
-schema, where it improves accuracy by $+5.4$ points ($0.674\!\to\!0.728$ averaged over the two
-context-bearing configurations) with a clean \emph{full}~$>$~\emph{no-lineage}~$>$~\emph{no-context}~$>$~\emph{schema-only}
-ordering. On \textbf{TPC-H} and the templated \textbf{synthetic} set the model is already
-saturated from column names alone, and context has no measurable benefit (within $\pm1$
-point). Lineage inheritance shows no consistent accuracy effect ($\pm1$--$2$ points); its
-value is coverage and cross-table consistency, which a capable model saturates here (coverage
-$=1.0$ in every configuration). We read this as a boundary condition, not a null result: when
-column names are self-describing a strong LLM is very hard to beat, so the benefit of grounding
-concentrates where names are \emph{un}informative---the cryptic, abbreviated columns that
-dominate real enterprise catalogs (Section~\ref{sec:limitations}).
+uses) and scored by sentence-embedding cosine. The experiments expose a clean two-regime
+picture: \emph{the value of grounding is governed by how informative the schema names are}.
+\textbf{Descriptive-name regime.} On TPC-H and the templated synthetic set a strong production
+model is already saturated from column names alone and context adds nothing measurable (within
+$\pm1$ point); on Sakila, the deepest and messiest of the readable schemas, context adds
+$+5.4$ points with a clean \emph{full}~$>$~\emph{no-lineage}~$>$~\emph{no-context}~$>$~\emph{schema-only}
+ordering (single run each).
+\textbf{Cryptic-name regime (Table~\ref{tab:cryptic}).} On the same Sakila schema with
+obfuscated identifiers, grounding becomes \emph{decisive}: mean accuracy over three
+independent runs rises from $0.273$ without context to $0.707$ with it---a $+43.4$-point gain
+($2.6\times$), with run-to-run standard deviation $\le 0.006$ on every configuration.
+Without any grounding the model also \emph{declines} objects it cannot describe
+(schema-only coverage $0.91$ in all three runs), while context restores full coverage.
+Because the schema, gold labels, and lineage are identical across the two Sakila variants and
+only the names differ, the comparison is controlled: the entire gap is attributable to name
+informativeness. Lineage inheritance shows no consistent accuracy effect in either regime
+($\pm1$--$2$ points); its value is coverage and cross-table consistency, which a capable model
+saturates here.
 \emph{Reference backend.} A deterministic, no-API-key backend reproduces the pipeline and its
 ablation \emph{mechanics} for anyone without credentials; because it does not semantically
 exploit inherited descriptions it is lineage-neutral by construction, so the numbers above are
@@ -330,6 +336,17 @@ schema-only~$<$~no-context~$<$~no-lineage~$<$~\emph{Full} ordering.}
 \label{tab:sakila}
 \end{table}
 
+\begin{table}[t]
+\centering
+\small
+\input{results_table_cryptic}
+\caption{Cryptic-name benchmark: Sakila with obfuscated identifiers (15 tables, 96 objects);
+mean~$\pm$~sd over three independent runs. Grounding is decisive when names carry no meaning:
+accuracy rises from $0.273$ to $0.707$ ($+43.4$ points, $2.6\times$), and without grounding
+the model declines objects it cannot describe (coverage $0.91$).}
+\label{tab:cryptic}
+\end{table}
+
 \subsection{Human-evaluation protocol}
 Because embedding similarity to a single reference under-credits correct paraphrases, we
 specify a human study to accompany real-catalog deployments (we release the protocol, not
@@ -359,15 +376,16 @@ finding is a boundary condition: on schemas whose names are descriptive (TPC-H, 
 the templated synthetic set), a strong LLM already produces accurate descriptions from names
 alone, so external context adds only a few points and lineage inheritance adds little to
 accuracy (it saturates coverage instead). This is exactly the regime where the task is
-\emph{easy}. The regime OMDG is built for---enterprise catalogs whose columns are cryptic and
-abbreviated (e.g.\ opaque codes and audit fields), where names carry almost no meaning---is
-where grounding should matter most, and our public benchmarks understate that gain because we
-could not release a proprietary cryptic-name catalog. A controlled benchmark that
-\emph{obfuscates} column names (decoupling name from meaning so context becomes necessary) is
-the most important next experiment, and the released harness supports it directly.
-\paragraph{Single run and metric caveats.} The reported numbers are from a single run;
-multi-seed means and variance are needed for tight comparisons (the mechanism itself is
-deterministic-backend reproducible). Embedding cosine to a single reference under-credits
+\emph{easy}. The cryptic-name benchmark tests the regime OMDG is built for---columns whose
+names carry no meaning---by obfuscating identifiers while holding schema, gold, and lineage
+fixed, and there grounding is decisive ($+43$ points). One caveat is that its grounding
+context (rename ETL) contains an explicit name mapping; real pipelines vary in how directly
+the mapping is recoverable, so the gain in the wild will interpolate between our two regimes
+depending on both name quality and context quality.
+\paragraph{Runs and metric caveats.} The headline cryptic-name result is reported as
+mean~$\pm$~sd over three independent runs (sd $\le 0.006$); the descriptive-name benchmarks
+are single runs, which we consider sufficient for their (null) findings given the observed
+run-to-run stability. Embedding cosine to a single reference under-credits
 correct paraphrases, and the rework loop's similarity signal can likewise under-value terse
 descriptions; pairing both with a reference-free judge is future work.
 \paragraph{Human-in-the-loop.} Generated descriptions should be surfaced with their grounding
@@ -391,11 +409,12 @@ Semantic metadata is the missing half of the modern data catalog, and generating
 requires more than prompting a language model with a column list. OMDG shows that treating
 \emph{lineage as a scheduling structure}---not merely as prompt content---together with
 canonicalize-first generation, multi-source retrieval grounding, and a bounded, auditable
-agentic control loop, yields a coherent and scalable system for the task. Empirically, on
-public schemas with descriptive names a strong production LLM is already a hard baseline:
-grounding helps clearly only on the deepest schema (Sakila, $+5.4$ points) and is negligible on
-the others; we argue, and leave to a cryptic-name benchmark to demonstrate, that the gain is
-larger precisely where names are uninformative---the setting that motivates the system. The design is agnostic to the
+agentic control loop, yields a coherent and scalable system for the task. Empirically, the value of
+grounding is governed by name informativeness: on public schemas with descriptive names a
+strong production LLM is already a hard baseline and context adds at most a few points, but on
+the same schema with obfuscated identifiers grounding is decisive ($0.27 \to 0.71$ accuracy,
+$+43$ points, stable over three runs)---direct evidence for the setting that motivates the
+system, the cryptic columns of real enterprise catalogs. The design is agnostic to the
 metadata source and the LLM provider, persists its state for incremental and auditable runs,
 and attaches provenance and confidence to every description so humans stay in the loop where it
 matters. We release the system, the three

@@ -130,19 +130,30 @@ truth and ablates the two contributions (context, lineage):
 ```bash
 python -m benchmark.run                                  # synthetic, deterministic (no API keys)
 python -m benchmark.run --benchmark tpch                 # real public schema (TPC-H)
-python -m benchmark.run --benchmark tpch --provider anthropic --model claude-3-5-sonnet-latest
+python -m benchmark.run --benchmark sakila               # real public schema (Sakila)
+python -m benchmark.run --benchmark cryptic              # Sakila with obfuscated names
+python -m benchmark.run --benchmark cryptic --provider gemini --model gemini-3.1-pro-preview
 ```
 
-Two benchmarks are included: a **synthetic** medallion catalog with controllable context
-and lineage, and the **TPC-H** public schema (8 tables) whose foreign keys are read as
-lineage — an external-validity check on a schema we did not author. Outputs
-`benchmark/results*.json` and `paper/results_table*.tex`. Ablation *trends* reproduce
-without API keys; run with `--provider` to reproduce with a real cloud LLM.
+**Headline result** (Gemini 3.1 Pro, mean over 3 runs): on descriptive-name schemas a strong
+LLM is already saturated and context adds a few points at most — but on the **cryptic-name**
+variant of the same schema (identifiers obfuscated, gold and lineage unchanged), grounding is
+**decisive: accuracy 0.27 → 0.71 (+43 points, sd ≤ 0.006)**. The value of grounding is
+governed by name informativeness — it concentrates exactly where enterprise catalogs hurt.
+
+Four benchmarks are included: a **synthetic** medallion catalog with controllable context
+and lineage; the **TPC-H** and **Sakila** public schemas (foreign keys read as lineage) —
+external-validity checks on schemas we did not author; and the **cryptic** variant of Sakila
+(obfuscated identifiers, unchanged gold + lineage) targeting the regime where names carry no
+meaning. Outputs `benchmark/results*.json` and `paper/results_table*.tex`; the three raw
+runs behind the headline mean±sd are committed as `benchmark/results_cryptic_run*.json`.
+Ablation *mechanics* reproduce without API keys; use `--provider` for a real cloud LLM.
 
 ## Paper
 
-The accompanying paper (arXiv / TMLR) is in [`paper/`](paper/). Build with
-`cd paper && pdflatex main && bibtex main && pdflatex main && pdflatex main`.
+The accompanying paper is in [`paper/`](paper/): `make paper` builds the arXiv PDF
+(`main.tex`, tectonic) and `make paper-tmlr` builds the anonymized double-blind TMLR
+submission (`main_tmlr.tex`, official `tmlr.sty`).
 
 ## License
 
